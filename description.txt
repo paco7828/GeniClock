@@ -1,0 +1,63 @@
+GeniClock:
+-Uses 8 digit HDSP / QDSP display
+Functions:
+-Display time (HH:MM:SS)
+-Beep at full-o-clocks like 16.00.00
+-Display year + month (YYYY. 06)
+-Display day + short day name
+"-DD Mon-"
+"-DD Tue-"
+"-DD Wed-"
+"-DD Thu-"
+"-DD Fri-"
+"-DD Sat-"
+"-DD Sun-"
+
+Timer:
+-Set hour+minute+second
+-Ability to pause
+-Ability to cancel
+-When time is over -> beep
+
+Pomodoro timer:
+-Ability to set number of cycles (1 cycle = 1 work, 2 cycle = 1 work + 1 break + 1 work)
+-Ability to set "Work minutes" (1 button press adds 5 minutes, 1 button press subtracts 5 minutes)
+-Ability to set "Break minutes"
+-When work minutes are over -> beep -> break minutes start; when over -> beep; new cycle begins
+-The 4th break should be (break minutes) * 4
+
+Stopper:
+-Ability to start stopper
+-Ability to stop stopper
+-Ability to "capture" current time (beep when captured)
+-After stopping stopper -> ability to cycle through captured times (button press -> "Save 1" displayed -> button press -> shows first saved time -> button press -> shows second saved time -> button press -> if there is no more saved times display the first saved time again
+
+Alarm:
+-Ability to set day + hour + minute + second
+-When alarm goes off -> beep until button is pressed
+-Ability to turn on/off alarm
+
+Reminder:
+-Ability to set name to the reminder (max 8 chars)
+-Ability to set reminder every X minutes (eg.: drink water every 30 minutes -> beep happens every 30 minutes with the custom name)
+
+Stopwatch game:
+-Try to stop the timer at exactly 10.00 seconds
+-After stopping the timer, the elapsed time will be displayed (another press resets the game)
+
+Reaction time tester:
+-Display says "GO"  -> try to react as fast as possible
+-Reaction time will be displayed after press (another press resets the game)
+
+Show temperature + humidity:
+-24 'C (temperature)
+-56% (humidity)
+
+1 button to cycle forward / 1 button to cycle backward through functions (time, year+month, day+short day name, temperature + humidity, alarm, timer, pomodoro timer, stopper)
+1 button for confirm
+1 button for cancel
+
+Time accuracy:
+Primary: GPS time (BEITIAN BN 220)
+Secondary: NTP time (ESP32 C3 SUPERMINI)
+Backup: DS3231
