@@ -58,6 +58,11 @@ Show temperature + humidity:
 1 button for cancel
 
 Time accuracy:
-Primary: GPS time (BEITIAN BN 220)
-Secondary: NTP time (ESP32 C3 SUPERMINI)
-Backup: DS3231
+-Primary: GPS time (BEITIAN BN 220)
+-Secondary: NTP time (ESP32 C3 SUPERMINI)
+-Backup: DS3231
+
+Power:
+-Battery operated
+-Ability to charge battery (usb-c)
+-When charging clock is still functional
