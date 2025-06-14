@@ -20,7 +20,6 @@ Timer:
 -When time is over -> beep
 
 Pomodoro timer:
--Ability to set number of cycles (1 cycle = 1 work, 2 cycle = 1 work + 1 break + 1 work)
 -Ability to set "Work minutes" (1 button press adds 5 minutes, 1 button press subtracts 5 minutes)
 -Ability to set "Break minutes"
 -When work minutes are over -> beep -> break minutes start; when over -> beep; new cycle begins

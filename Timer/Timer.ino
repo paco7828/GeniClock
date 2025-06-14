@@ -181,7 +181,7 @@ void handleAdd() {
     // Hours
     case 0:
       currentHours++;
-      if (currentHours > 24) {
+      if (currentHours > 23) {
         currentHours = 0;
       }
       Serial.print("Current hours: ");
@@ -190,7 +190,7 @@ void handleAdd() {
     // Minutes
     case 1:
       currentMinutes++;
-      if (currentMinutes > 60) {
+      if (currentMinutes > 59) {
         currentMinutes = 0;
       }
       Serial.print("Current minutes: ");
@@ -199,7 +199,7 @@ void handleAdd() {
     // Seconds
     case 2:
       currentSeconds++;
-      if (currentSeconds > 60) {
+      if (currentSeconds > 59) {
         currentSeconds = 0;
       }
       Serial.print("Current seconds: ");
@@ -216,7 +216,7 @@ void handleSubtract() {
     case 0:
       currentHours--;
       if (currentHours < 0) {
-        currentHours = 24;
+        currentHours = 23;
       }
       Serial.print("Current hours: ");
       Serial.println(formatTimerValues(currentHours));
@@ -225,7 +225,7 @@ void handleSubtract() {
     case 1:
       currentMinutes--;
       if (currentMinutes < 0) {
-        currentMinutes = 60;
+        currentMinutes = 59;
       }
       Serial.print("Current minutes: ");
       Serial.println(formatTimerValues(currentMinutes));
@@ -234,7 +234,7 @@ void handleSubtract() {
     case 2:
       currentSeconds--;
       if (currentSeconds < 0) {
-        currentSeconds = 60;
+        currentSeconds = 59;
       }
       Serial.print("Current seconds: ");
       Serial.println(formatTimerValues(currentSeconds));
