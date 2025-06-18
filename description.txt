@@ -49,10 +49,10 @@ Reaction time tester:
 -Reaction time will be displayed after press (another press resets the game)
 
 Show temperature + humidity:
--24 'C (temperature)
--56% (humidity)
+-24 'C (temperature) from DS3231
 
-1 button to cycle forward / 1 button to cycle backward through functions (time, year+month, day+short day name, temperature + humidity, alarm, timer, pomodoro timer, stopper)
+1 button to cycle forward through functions / increment values
+1 button to cycle backward through functions / decrement values
 1 button for confirm
 1 button for cancel
 

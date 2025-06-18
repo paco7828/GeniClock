@@ -1,0 +1,44 @@
+ESP32 C3 SUPERMINI:
+GPIO0 -> Button1
+GPIO1 -> Button2
+GPIO2 -> Button3
+GPIO3 -> Button4
+GPIO4 -> Buzzer
+GPIO6 -> RTC SDA
+GPIO7 -> RTC SCL
+GPIO8 -> (1;2) 11
+GPIO9 -> (1;2) 12
+GPIO10 -> (1) 14
+GPIO20 -> GPS Tx
+
+(1;2) 74HC595:
+10 -> VCC
+13 -> GND
+
+(1) 9 -> (2) 14
+
+HDSP-2111:
+1 -> (2) QA
+2 -> VCC
+3 -> (2) QB
+4 -> (2) QC
+5 -> (2) QD
+6 -> VCC
+7 -> NC
+8 -> VCC
+9 -> VCC
+10 -> NC
+11 -> (1) QA
+12 -> VCC
+13 -> GND
+14 -> GND
+15 -> (1) QA
+16 -> VCC
+17 -> (1) QB
+18 -> (1) QC
+19 -> (1) QD
+20 -> (1) QE
+21 -> (1) QF
+22 -> (1) QG
+23 -> (1) QH
+24 -> GND
