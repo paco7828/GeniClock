@@ -48,7 +48,7 @@ Reaction time tester:
 -Display says "GO"  -> try to react as fast as possible
 -Reaction time will be displayed after press (another press resets the game)
 
-Show temperature + humidity:
+Show temperature:
 -24 'C (temperature) from DS3231
 
 1 button to cycle forward through functions / increment values
