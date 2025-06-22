@@ -25,34 +25,42 @@ public:
   }
 
   double getLatitude() {
-    return gps.location.lat();
+    return gps.location.lat();  // 49.1234
   }
 
   double getLongitude() {
-    return gps.location.lng();
+    return gps.location.lng();  // 18.1234
   }
 
   double getSpeedKmph() {
-    return gps.speed.kmph();
+    return gps.speed.kmph();  // 72.15
   }
 
-  String getDate() {
+  String getDate(char partOfDate) {
     if (gps.date.isValid()) {
-      char buffer[11];
-      sprintf(buffer, "%02d/%02d/%04d",
-              gps.date.day(), gps.date.month(), gps.date.year());
-      return String(buffer);
+      partOfDate.toLowerCase();
+      if (partOfDate == "y") {
+        return gps.date.year();  // 2025
+      } else if (partOfDate == "m") {
+        return gps.date.month();  // 5
+      } else if (partOfDate == "d") {
+        return gps.date.day();  // 30
+      } else {
+        return "????";
+      }
     }
-    return "No Date";
-  }
 
-  String getTime() {
-    if (gps.time.isValid()) {
-      char buffer[9];
-      sprintf(buffer, "%02d:%02d:%02d",
-              gps.time.hour(), gps.time.minute(), gps.time.second());
-      return String(buffer);
-    }
-    return "No Time";
-  }
-};
+    String getTime(char partOfTime) {
+      if (gps.time.isValid()) {
+        partOfTime.toLowerCase();
+        if (partOfTime == "h") {
+          return gps.time.hour(); // 13
+        } else if (partOfTime == "m") {
+          return gps.time.minute(); // 52
+        } else if (partOfTime == "s") {
+          return gps.time.second(); // 15
+        } else {
+          return "??";
+        }
+      }
+    };

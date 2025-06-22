@@ -18,9 +18,6 @@ NTP ntp(SSID, PASSW);
 RTC_DS3231 rtc;
 
 void setup() {
-  // Serial
-  Serial.begin(115200);
-
   // Display
   HDSP.begin();
 
@@ -43,8 +40,8 @@ void setup() {
   // RTC
   Wire.begin(RTC_SDA, RTC_SCL);
   if (!rtc.begin()) {
-    Serial.println("RTC not found!");
     HDSP.displayText("RTC FAIL");
+    delay(1500);
   }
 
   // Turn off display
@@ -54,13 +51,23 @@ void setup() {
   HDSP.displayText("  GENI  ");
 }
 
+void displayTime(String hour, String minute, String second) {
+  String text = hour + ':' + minute + ':' + second;
+  HDSP.displayText(text);
+  // add 0 formatting
+}
+
+void displayDate(String year, String month, String day) {
+  // add 0 formatting
+}
+
 void loop() {
   // GPS time
   gps.update();
-  Serial.println("GPS date + time");
   if (gps.hasFix()) {
-    Serial.println(gps.getDate());
-    Serial.println(gps.getTime());
+    HDSP.displayText("GPS");
+    delay(1000);
+    HDSP.displayText("");
   } else {
     Serial.println("No fix");
   }
