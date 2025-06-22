@@ -31,22 +31,16 @@ public:
     return getLocalTime(&timeInfo);
   }
 
-  String getWeekdayName() {
-    if (!update()) return "N/A";
-    char buffer[20];
-    strftime(buffer, sizeof(buffer), "%A", &timeInfo);
-    return String(buffer);
+  byte getMonth() {
+    return update() ? timeInfo.tm_mon : 0;
   }
 
-  String getMonthName() {
-    if (!update()) return "N/A";
-    char buffer[20];
-    strftime(buffer, sizeof(buffer), "%B", &timeInfo);
-    return String(buffer);
-  }
-
-  byte getDayOfMonth() {
+  byte getDay() {
     return update() ? timeInfo.tm_mday : 0;
+  }
+
+  byte getDayIndex() {
+    return update() ? timeInfo.tm_wday : 0;
   }
 
   int getYear() {

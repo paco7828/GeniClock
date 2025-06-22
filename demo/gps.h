@@ -6,6 +6,18 @@ private:
   HardwareSerial gpsSerial;
   TinyGPSPlus gps;
 
+  // Zeller’s Congruence to calculate day of the week
+  int calculateDayOfWeek(int y, int m, int d) {
+    if (m < 3) {
+      m += 12;
+      y -= 1;
+    }
+    int k = y % 100;
+    int j = y / 100;
+    int f = d + 13 * (m + 1) / 5 + k + k / 4 + j / 4 + 5 * j;
+    return ((f + 5) % 7);  // Sunday = 0
+  }
+
 public:
   GPS()
     : gpsSerial(1) {}
@@ -36,31 +48,31 @@ public:
     return gps.speed.kmph();  // 72.15
   }
 
-  String getDate(char partOfDate) {
-    if (gps.date.isValid()) {
-      partOfDate.toLowerCase();
-      if (partOfDate == "y") {
-        return gps.date.year();  // 2025
-      } else if (partOfDate == "m") {
-        return gps.date.month();  // 5
-      } else if (partOfDate == "d") {
-        return gps.date.day();  // 30
-      } else {
-        return "????";
-      }
-    }
+  int getYear() {
+    return gps.date.isValid() ? gps.date.year() : 0;
+  }
 
-    String getTime(char partOfTime) {
-      if (gps.time.isValid()) {
-        partOfTime.toLowerCase();
-        if (partOfTime == "h") {
-          return gps.time.hour(); // 13
-        } else if (partOfTime == "m") {
-          return gps.time.minute(); // 52
-        } else if (partOfTime == "s") {
-          return gps.time.second(); // 15
-        } else {
-          return "??";
-        }
-      }
-    };
+  byte getMonth() {
+    return gps.date.isValid() ? gps.date.month() : 0;
+  }
+
+  byte getDay() {
+    return gps.date.isValid() ? gps.date.day() : 0;
+  }
+
+  byte getHour() {
+    return gps.time.isValid() ? gps.time.hour() : 0;
+  }
+
+  byte getMinute() {
+    return gps.time.isValid() ? gps.time.minute() : 0;
+  }
+
+  byte getSecond() {
+    return gps.time.isValid() ? gps.time.second() : 0;
+  }
+
+  byte getDayIndex() {
+    return this->calculateDayOfWeek(this->getYear(), this->getMonth(), this->getDay());
+  }
+};

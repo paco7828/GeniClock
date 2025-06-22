@@ -22,3 +22,14 @@ const byte RTC_SCL = 7;
 // Wifi credentials
 char* SSID = "UPCD679A2A";
 char* PASSW = "Koszegi1963";
+
+// Button debounce delay
+const unsigned long debounceDelay = 50;
+
+// Short day names based on day index
+const char* daysOfWeek[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
+
+// Intervals
+const unsigned long ntpRetryInterval = 5000;  // 5 seconds
+const unsigned long rtcReadInterval = 1000;  // 1 second
+const unsigned long displayUpdateInterval = 500;  // 500 milliseconds

@@ -5,6 +5,47 @@
 #include <Wire.h>
 #include <RTClib.h>
 
+// Last button states
+byte lastConfirmState = HIGH;
+byte lastAddState = HIGH;
+byte lastSubtractState = HIGH;
+byte lastCancelState = HIGH;
+
+// Button states
+byte confirmState = HIGH;
+byte addState = HIGH;
+byte subtractState = HIGH;
+byte cancelState = HIGH;
+
+// Button debounce helpers
+unsigned long lastDebounceTimeConfirm = 0;
+unsigned long lastDebounceTimeAdd = 0;
+unsigned long lastDebounceTimeSubtract = 0;
+unsigned long lastDebounceTimeCancel = 0;
+
+struct timeData {
+  int year;
+  byte month;
+  byte day;
+  byte dayIndex;
+  byte hour;
+  byte minute;
+  byte second;
+};
+
+timeData currentTime;
+
+// Time source status flags
+bool gpsAvailable = false;
+bool ntpAvailable = false;
+bool rtcAvailable = false;
+bool wifiConnected = false;
+
+// Timing for connection attempts
+unsigned long lastNtpAttempt = 0;
+unsigned long lastRtcRead = 0;
+unsigned long lastDisplayUpdate = 0;
+
 // Display
 HDSPDisplay HDSP(SER, SRCLK, RCLK);
 
@@ -34,70 +75,157 @@ void setup() {
   // GPS
   gps.begin(GPS_RX);
 
-  // NTP
-  ntp.begin();
-
   // RTC
   Wire.begin(RTC_SDA, RTC_SCL);
-  if (!rtc.begin()) {
+  if (rtc.begin()) {
+    rtcAvailable = true;
+  } else {
     HDSP.displayText("RTC FAIL");
     delay(1500);
   }
 
-  // Turn off display
-  HDSP.resetDisplay();
-
   // Default display text
-  HDSP.displayText("  GENI  ");
-}
-
-void displayTime(String hour, String minute, String second) {
-  String text = hour + ':' + minute + ':' + second;
-  HDSP.displayText(text);
-  // add 0 formatting
-}
-
-void displayDate(String year, String month, String day) {
-  // add 0 formatting
+  HDSP.displayText("- GENI -");
+  delay(1000);
 }
 
 void loop() {
-  // GPS time
+  updateTimeSource();
+  updateDisplay();
+}
+
+void updateTimeSource() {
+  bool timeUpdated = false;
+
+  // Always check GPS first (highest priority)
   gps.update();
+
   if (gps.hasFix()) {
-    HDSP.displayText("GPS");
-    delay(1000);
-    HDSP.displayText("");
+    if (!gpsAvailable) {
+      gpsAvailable = true;
+    }
+
+    // Use GPS data
+    currentTime.year = gps.getYear();
+    currentTime.month = gps.getMonth();
+    currentTime.day = gps.getDay();
+    currentTime.dayIndex = gps.getDayIndex();
+    currentTime.hour = gps.getHour();
+    currentTime.minute = gps.getMinute();
+    currentTime.second = gps.getSecond();
+    timeUpdated = true;
+
+    // Adjust RTC time to GPS time
+    if (rtcAvailable) {
+      rtc.adjust(DateTime(currentTime.year, currentTime.month, currentTime.day, currentTime.hour, currentTime.minute, currentTime.second));
+    }
   } else {
-    Serial.println("No fix");
+    gpsAvailable = false;
   }
 
-  // NTP time
-  Serial.println("NTP Date:");
-  Serial.print(ntp.getWeekdayName());
-  Serial.print(", ");
-  Serial.print(ntp.getMonthName());
-  Serial.print(" ");
-  Serial.print(ntp.getDayOfMonth());
-  Serial.print(", ");
-  Serial.println(ntp.getYear());
-  Serial.println("NTP Time:");
-  Serial.printf("%02d:%02d:%02d\n", ntp.getHour(), ntp.getMinute(), ntp.getSecond());
+  // If GPS not available, try NTP (medium priority)
+  if (!gpsAvailable) {
+    // Initialize NTP
+    if (!wifiConnected && (millis() - lastNtpAttempt > ntpRetryInterval)) {
+      lastNtpAttempt = millis();
 
-  // RTC time
-  DateTime now = rtc.now();
-  Serial.print("RTC Date: ");
-  Serial.print(now.year());
-  Serial.print("-");
-  Serial.print(now.month());
-  Serial.print("-");
-  Serial.println(now.day());
+      if (!wifiConnected) {
+        // Try to connect to WiFi
+        WiFi.begin(SSID, PASSW);
+        unsigned long wifiStart = millis();
+        while (WiFi.status() != WL_CONNECTED && (millis() - wifiStart) < 3000) {
+          delay(100);
+        }
 
-  Serial.print("RTC Time: ");
-  Serial.print(now.hour());
-  Serial.print(":");
-  Serial.print(now.minute());
-  Serial.print(":");
-  Serial.println(now.second());
-  delay(2000);
+        if (WiFi.status() == WL_CONNECTED) {
+          wifiConnected = true;
+          ntp.begin();
+        }
+      }
+    }
+
+    if (wifiConnected && ntp.update()) {
+      if (!ntpAvailable) {
+        ntpAvailable = true;
+      }
+
+      // Use NTP data
+      currentTime.year = ntp.getYear();
+      currentTime.month = ntp.getMonth();
+      currentTime.day = ntp.getDay();
+      currentTime.dayIndex = ntp.getDayIndex();
+      currentTime.hour = ntp.getHour();
+      currentTime.minute = ntp.getMinute();
+      currentTime.second = ntp.getSecond();
+      timeUpdated = true;
+
+      // Adjust RTC time to NTP time (only if GPS is not available)
+      if (rtcAvailable && !gpsAvailable) {
+        rtc.adjust(DateTime(currentTime.year, currentTime.month, currentTime.day, currentTime.hour, currentTime.minute, currentTime.second));
+      }
+    } else {
+      ntpAvailable = false;
+    }
+  }
+
+  // If neither GPS nor NTP available, use RTC (lowest priority)
+  if (!gpsAvailable && !ntpAvailable && rtcAvailable) {
+    if (millis() - lastRtcRead > rtcReadInterval) {
+      lastRtcRead = millis();
+
+      DateTime now = rtc.now();
+
+      if (now.isValid()) {
+        // Use RTC data
+        currentTime.year = now.year();
+        currentTime.month = now.month();
+        currentTime.day = now.day();
+        currentTime.dayIndex = now.dayOfTheWeek();
+        currentTime.hour = now.hour();
+        currentTime.minute = now.minute();
+        currentTime.second = now.second();
+        timeUpdated = true;
+      }
+    }
+  }
+}
+
+void updateDisplay() {
+  if (millis() - lastDisplayUpdate > displayUpdateInterval) {
+    lastDisplayUpdate = millis();
+
+    // If no time source is available, display error
+    if (!gpsAvailable && !ntpAvailable && !rtcAvailable) {
+      HDSP.displayText(" NO TIME ");
+    } else {
+      // Display the current time
+      HDSP.displayTime(currentTime.hour, currentTime.minute, currentTime.second);
+    }
+  }
+}
+
+// Function for button debouncing
+void debounceBtn(byte btnPin, byte* btnState, byte* lastBtnState, unsigned long* lastDebounceTime, void (*callback)()) {
+  int reading = digitalRead(btnPin);
+
+  // If the switch changed, due to noise or pressing:
+  if (reading != *lastBtnState) {
+    *lastDebounceTime = millis();
+  }
+
+  // If the reading has been stable for longer than the debounce delay
+  if ((millis() - *lastDebounceTime) > debounceDelay) {
+    // If the button state has actually changed:
+    if (reading != *btnState) {
+      *btnState = reading;
+
+      // Only call callback on button press (HIGH to LOW transition)
+      if (*btnState == LOW) {
+        callback();
+      }
+    }
+  }
+
+  // Save the reading for next time
+  *lastBtnState = reading;
 }
