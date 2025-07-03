@@ -45,11 +45,30 @@ public:
   }
 
   void displayText(char* text) {
+    resetDisplay();
     char buffer[9];
     for (int i = 0; i < 8; i++) {
       buffer[i] = (text[i] != '\0') ? text[i] : ' ';
     }
     buffer[8] = '\0';
     this->sendToDisplay(buffer);
+  }
+
+  void displayTime(byte hour, byte minute, byte second) {
+    char buffer[9];
+    sprintf(buffer, "%02d:%02d:%02d", hour, minute, second);
+    this->displayText(buffer);
+  }
+
+  void displayYearMonth(int year, byte month) {
+    char buffer[9];
+    sprintf(buffer, "%d. %02d", year, month);
+    this->displayText(buffer);
+  }
+
+  void displayDayAndName(byte day, byte dayIndex) {
+    char buffer[9];
+    sprintf(buffer, " %02d %s ", day, daysOfWeek[dayIndex]);
+    this->displayText(buffer);
   }
 };
