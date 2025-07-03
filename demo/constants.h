@@ -31,5 +31,14 @@ const char* daysOfWeek[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
 
 // Intervals
 const unsigned long ntpRetryInterval = 5000;  // 5 seconds
-const unsigned long rtcReadInterval = 1000;  // 1 second
-const unsigned long displayUpdateInterval = 500;  // 500 milliseconds
+const unsigned long rtcReadInterval = 1000;   // 1 second
+
+// Modes
+const byte MIN_MODE = 0;
+const byte MAX_MODE = 3;
+
+// Mode titles
+char* MODE_TITLES[] = { "HH:MM:SS", "YYYY. MM", " DD --- ", " TIMER  " };
+
+// For how much time the selected mode's title is shown
+const int TITLE_SHOW_TIME = 2000;  // 2 seconds

@@ -33,7 +33,22 @@ struct timeData {
   byte second;
 };
 
+// Time & Date values storage
 timeData currentTime;
+
+byte currentMode = 0;
+/*
+0 -> time
+1 -> year+month
+2 -> day+short day name
+3 -> timer
+*/
+
+// Settings index inside modes
+byte currentSetting = 0; 
+
+// Default state
+bool changingModes = true;
 
 // Time source status flags
 bool gpsAvailable = false;
@@ -45,6 +60,9 @@ bool wifiConnected = false;
 unsigned long lastNtpAttempt = 0;
 unsigned long lastRtcRead = 0;
 unsigned long lastDisplayUpdate = 0;
+
+// Display update interval
+unsigned long displayUpdateInterval = 500;  // milliseconds
 
 // Display
 HDSPDisplay HDSP(SER, SRCLK, RCLK);
@@ -90,8 +108,46 @@ void setup() {
 }
 
 void loop() {
-  updateTimeSource();
-  updateDisplay();
+  // If in default mode
+  if (changingModes) {
+    // ADD button cycles forwards
+    debounceBtn(ADD_BTN, &addState, &lastAddState, &lastDebounceTimeAdd, []() {
+      currentMode++;
+    });
+
+    // SUBTRACT button cycles backwards
+    debounceBtn(SUBTRACT_BTN, &subtractState, &lastSubtractState, &lastDebounceTimeSubtract, []() {
+      currentMode--;
+    });
+
+    // Handle different modes
+    switch (currentMode) {
+      // time (HH:MM:SS)
+      case 0:
+        displayUpdateInterval = 500;
+        break;
+      // year + month (2025. 06)
+      case 1:
+        displayUpdateInterval = 10000;
+        break;
+      // day + short day name (31 Wed)
+      case 2:
+        displayUpdateInterval = 10000;
+        break;
+      // timer
+      case 3:
+        break;
+    }
+  }
+
+  // Only update time source if needed
+  if (currentMode == 0 || currentMode == 1 || currentMode == 2) {
+    updateTimeSource();
+    updateTDDisplay();
+  }
+
+  if (currentMode < MIN_MODE) currentMode = MAX_MODE;
+  if (currentMode > MAX_MODE) currentMode = MIN_MODE;
 }
 
 void updateTimeSource() {
@@ -190,22 +246,36 @@ void updateTimeSource() {
   }
 }
 
-void updateDisplay() {
+void updateTDDisplay() {
   if (millis() - lastDisplayUpdate > displayUpdateInterval) {
     lastDisplayUpdate = millis();
 
     // If no time source is available, display error
     if (!gpsAvailable && !ntpAvailable && !rtcAvailable) {
-      HDSP.displayText(" NO TIME ");
+      HDSP.displayText(" NO T&D ");
     } else {
-      // Display the current time
-      HDSP.displayTime(currentTime.hour, currentTime.minute, currentTime.second);
+      HDSP.displayText(MODE_TITLES[currentMode]); // check why const MODE_TITLES isn't working
+      delay(TITLE_SHOW_TIME);
+      switch (currentMode) {
+        // time (HH:MM:SS)
+        case 0:
+          HDSP.displayTime(currentTime.hour, currentTime.minute, currentTime.second);
+          break;
+        // year + month (2025. 06)
+        case 1:
+          HDSP.displayYearMonth(currentTime.year, currentTime.month);
+          break;
+        // day + short day name (31 Wed)
+        case 2:
+          HDSP.displayDayAndName(currentTime.day, currentTime.dayIndex);
+          break;
+      }
     }
   }
 }
 
 // Function for button debouncing
-void debounceBtn(byte btnPin, byte* btnState, byte* lastBtnState, unsigned long* lastDebounceTime, void (*callback)()) {
+void debounceBtn(byte btnPin, byte *btnState, byte *lastBtnState, unsigned long *lastDebounceTime, void (*callback)()) {
   int reading = digitalRead(btnPin);
 
   // If the switch changed, due to noise or pressing:
