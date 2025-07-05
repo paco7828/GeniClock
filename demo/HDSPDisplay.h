@@ -5,6 +5,10 @@ private:
   // Register class instance
   Register helperRegister;
 
+  // Store last displayed content to avoid unnecessary updates
+  char lastDisplayedText[9];
+  bool displayInitialized;
+
   // Helper function used by displayText function
   void sendToDisplay(char* data) {
     for (int addr = 0; addr < 8; addr++) {
@@ -26,10 +30,16 @@ private:
 
 public:
   HDSPDisplay(byte ser, byte srclk, byte rclk)
-    : helperRegister(ser, srclk, rclk) {}
+    : helperRegister(ser, srclk, rclk), displayInitialized(false) {
+    // Initialize last displayed text to empty
+    for (int i = 0; i < 9; i++) {
+      lastDisplayedText[i] = '\0';
+    }
+  }
 
   void begin() {
     this->helperRegister.begin();
+    displayInitialized = false;
   }
 
   void resetDisplay() {
@@ -42,16 +52,50 @@ public:
     reg2 = 0b00000001;  // RST=1
     this->helperRegister.shiftOutRegisters(reg2, reg1);
     delayMicroseconds(150);
+
+    // Clear the last displayed text since we reset
+    for (int i = 0; i < 9; i++) {
+      lastDisplayedText[i] = '\0';
+    }
+    displayInitialized = true;
   }
 
   void displayText(char* text) {
-    resetDisplay();
     char buffer[9];
+
+    // Prepare the buffer with proper spacing
     for (int i = 0; i < 8; i++) {
       buffer[i] = (text[i] != '\0') ? text[i] : ' ';
     }
     buffer[8] = '\0';
-    this->sendToDisplay(buffer);
+
+    // Check if content has changed or display needs initialization
+    bool contentChanged = false;
+    if (!displayInitialized) {
+      contentChanged = true;
+    } else {
+      for (int i = 0; i < 8; i++) {
+        if (buffer[i] != lastDisplayedText[i]) {
+          contentChanged = true;
+          break;
+        }
+      }
+    }
+
+    // Only update if content changed or display needs reset
+    if (contentChanged) {
+      // Only reset display if not initialized
+      if (!displayInitialized) {
+        resetDisplay();
+      }
+
+      this->sendToDisplay(buffer);
+
+      // Store the current content
+      for (int i = 0; i < 9; i++) {
+        lastDisplayedText[i] = buffer[i];
+      }
+    }
   }
 
   void displayTime(byte hour, byte minute, byte second) {
@@ -70,5 +114,11 @@ public:
     char buffer[9];
     sprintf(buffer, " %02d %s ", day, daysOfWeek[dayIndex]);
     this->displayText(buffer);
+  }
+
+  // Force a display reset and update (useful for status messages)
+  void forceDisplayText(char* text) {
+    resetDisplay();
+    displayText(text);
   }
 };

@@ -20,8 +20,8 @@ const byte RTC_SDA = 6;
 const byte RTC_SCL = 7;
 
 // Wifi credentials
-char* SSID = "UPCD679A2A";
-char* PASSW = "Koszegi1963";
+char* SSID = "Xiaomi_88A6";
+char* PASSW = "Xiaomi_88A6";
 
 // Button debounce delay
 const unsigned long debounceDelay = 50;
