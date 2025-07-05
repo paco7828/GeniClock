@@ -81,8 +81,37 @@ byte notificationStep = 0;
 const unsigned long notificationStepDuration = 200;  // Duration of each tone step
 
 // Notification melody (frequencies in Hz)
-const int notificationMelody[] = {523, 659, 783, 1047};  // C5, E5, G5, C6
+const int notificationMelody[] = { 523, 659, 783, 1047 };  // C5, E5, G5, C6
 const int notificationMelodyLength = 4;
+
+// Startup sound variables
+bool playingStartupSound = false;
+unsigned long startupSoundStartTime = 0;
+byte startupSoundStep = 0;
+const unsigned long startupSoundStepDuration = 150;  // Duration of each startup tone step
+
+// Startup melody - smooth, cute and playful ascending melody
+const int startupMelody[] = {
+  392,  // G4
+  440,  // A4
+  523,  // C5
+  587,  // D5
+  659,  // E5
+  784,  // G5
+  880   // A5
+};
+const int startupMelodyLength = 7;
+
+// Startup sound note durations (in milliseconds)
+const int startupNoteDurations[] = {
+  120,  // G4 - short
+  120,  // A4 - short
+  180,  // C5 - medium
+  120,  // D5 - short
+  120,  // E5 - short
+  200,  // G5 - long
+  300   // A5 - longest (finale)
+};
 
 // Display
 HDSPDisplay HDSP(SER, SRCLK, RCLK);
@@ -120,25 +149,36 @@ void setup() {
   if (rtc.begin()) {
     rtcAvailable = true;
     Serial.println("RTC initialized successfully");
-    showStatusMessage(" RTC OK ");
   } else {
     Serial.println("RTC initialization failed");
     HDSP.displayText("RTC FAIL");
     delay(1500);
   }
 
-  // Default display text
+  // Start startup sound and display sequence
+  playingStartupSound = true;
+  startupSoundStartTime = millis();
+  startupSoundStep = 0;
+
+  // Show startup message
   HDSP.displayText("- GENI -");
-  delay(1000);
+
+  // Play first startup tone
+  tone(BUZZER, startupMelody[0], startupNoteDurations[0]);
+
+  Serial.println("Startup sound started");
 
   // Initialize display update timer
   lastDisplayUpdate = millis();
-
-  // Start showing time immediately (mode 0)
-  Serial.println("Starting in HH:MM:SS mode");
 }
 
 void loop() {
+  // Handle startup sound first
+  if (playingStartupSound) {
+    handleStartupSound();
+    return;  // Don't do anything else during startup sound
+  }
+
   // Handle button presses
   handleButtons();
 
@@ -151,7 +191,7 @@ void loop() {
   // Check if mode title should auto-confirm
   if (showingModeTitle && (millis() - modeTitleStartTime >= TITLE_SHOW_TIME)) {
     showingModeTitle = false;
-    
+
     // Set appropriate update interval for selected mode
     switch (currentMode) {
       case 0: displayUpdateInterval = 500; break;   // time updates every 500ms
@@ -177,35 +217,71 @@ void loop() {
   }
 }
 
+void handleStartupSound() {
+  // Check if it's time to play the next note
+  if (millis() - startupSoundStartTime >= startupNoteDurations[startupSoundStep]) {
+    startupSoundStep++;
+
+    if (startupSoundStep < startupMelodyLength) {
+      // Play next note in startup melody
+      startupSoundStartTime = millis();
+      tone(BUZZER, startupMelody[startupSoundStep], startupNoteDurations[startupSoundStep]);
+
+      Serial.print("Playing startup note ");
+      Serial.print(startupSoundStep + 1);
+      Serial.print("/");
+      Serial.println(startupMelodyLength);
+    } else {
+      // Startup sound finished
+      playingStartupSound = false;
+      noTone(BUZZER);
+
+      Serial.println("Startup sound finished");
+
+      // Show RTC status after startup sound
+      if (rtcAvailable) {
+        showStatusMessage(" RTC OK ");
+      }
+
+      // Wait a bit before starting normal operation
+      delay(500);
+
+      // Start showing time immediately (mode 0)
+      Serial.println("Starting in HH:MM:SS mode");
+
+      // Force immediate display update
+      lastDisplayUpdate = 0;
+    }
+  }
+}
+
 void handleHourNotification() {
   // Check if we should start a new hour notification
-  if (hourNotificationEnabled && !playingHourNotification && 
-      lastHour != 255 && currentTime.hour != lastHour && 
-      currentTime.minute == 7 && currentTime.second == 0) {
-    
+  if (hourNotificationEnabled && !playingHourNotification && lastHour != 255 && currentTime.hour != lastHour && currentTime.minute == 0 && currentTime.second == 0) {
+
     // Start hour notification
     playingHourNotification = true;
     notificationStartTime = millis();
     notificationStep = 0;
-    
+
     Serial.print("Hour notification started for ");
     Serial.print(currentTime.hour);
     Serial.println(":00");
-    
+
     // Play first tone
     tone(BUZZER, notificationMelody[0], notificationStepDuration);
-    
+
     // Show hour notification on display
     char hourMsg[9];
     sprintf(hourMsg, " %02d:00  ", currentTime.hour);
     HDSP.forceDisplayText(hourMsg);
   }
-  
+
   // Handle notification progression
   if (playingHourNotification) {
     if (millis() - notificationStartTime >= (notificationStep + 1) * notificationStepDuration) {
       notificationStep++;
-      
+
       if (notificationStep < notificationMelodyLength) {
         // Play next tone
         tone(BUZZER, notificationMelody[notificationStep], notificationStepDuration);
@@ -213,15 +289,15 @@ void handleHourNotification() {
         // Notification finished
         playingHourNotification = false;
         noTone(BUZZER);
-        
+
         // Force display update by resetting timer
         lastDisplayUpdate = 0;
-        
+
         Serial.println("Hour notification finished");
       }
     }
   }
-  
+
   // Update lastHour for next comparison
   lastHour = currentTime.hour;
 }
@@ -237,11 +313,11 @@ void showStatusMessage(char *message) {
 void startModeSwitch(byte newMode) {
   // Ensure the new mode is within valid range
   if (newMode > MAX_MODE) newMode = MIN_MODE;
-  
+
   currentMode = newMode;
   showingModeTitle = true;
   modeTitleStartTime = millis();
-  
+
   // Show the title of the new mode
   HDSP.displayText(MODE_TITLES[currentMode]);
   Serial.print("Switching to mode: ");
@@ -280,14 +356,14 @@ void handleButtons() {
   // CANCEL button toggles hour notification on/off
   debounceBtn(CANCEL_BTN, &cancelState, &lastCancelState, &lastDebounceTimeCancel, []() {
     hourNotificationEnabled = !hourNotificationEnabled;
-    
+
     if (hourNotificationEnabled) {
       showStatusMessage("BEEP ON ");
       Serial.println("Hour notification enabled");
     } else {
       showStatusMessage("BEEP OFF");
       Serial.println("Hour notification disabled");
-      
+
       // Stop any currently playing notification
       if (playingHourNotification) {
         playingHourNotification = false;
