@@ -5,9 +5,9 @@ const byte RCLK = 9;
 
 // Control buttons
 const byte CONFIRM_BTN = 0;
-const byte ADD_BTN = 1;
-const byte SUBTRACT_BTN = 2;
-const byte CANCEL_BTN = 3;
+const byte CANCEL_BTN = 1;
+const byte ADD_BTN = 2;
+const byte SUBTRACT_BTN = 3;
 
 // Buzzer
 const byte BUZZER = 4;
