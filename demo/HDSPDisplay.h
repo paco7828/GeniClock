@@ -116,6 +116,27 @@ public:
     this->displayText(buffer);
   }
 
+  void displayTemperature(float temperature) {
+    char buffer[9];
+
+    // Handle different temperature ranges for proper formatting
+    if (temperature >= 100.0 || temperature <= -100.0) {
+      // For very high/low temperatures, show without decimal
+      sprintf(buffer, " %03.0f C ", abs((int)temperature));
+    } else if (temperature >= 10.0 || temperature <= -10.0) {
+      // For double digit temperatures: "-24.5 C-"
+      sprintf(buffer, " %04.1f C ", abs(temperature));
+    } else if (temperature >= 0.0) {
+      // For single digit positive temperatures: "-5.25 C-"
+      sprintf(buffer, " %04.2f C ", temperature);
+    } else {
+      // For single digit negative temperatures: "--5.2 C-"
+      sprintf(buffer, " -%03.1f C ", abs(temperature));
+    }
+
+    this->displayText(buffer);
+  }
+
   // Force a display reset and update (useful for status messages)
   void forceDisplayText(char* text) {
     resetDisplay();

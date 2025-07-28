@@ -41,7 +41,8 @@ byte currentMode = 0;  // Start with HH:MM:SS mode
 0 -> time
 1 -> year+month
 2 -> day+short day name
-3 -> timer
+3 -> temperature
+4 -> timer
 */
 
 // Settings index inside modes
@@ -61,13 +62,16 @@ bool wifiConnecting = false;
 // Status message variables
 bool showingStatusMessage = false;
 unsigned long statusMessageStart = 0;
-const unsigned long statusMessageDuration = 3000;  // 3 seconds
 
 // Timing for connection attempts
 unsigned long lastNtpAttempt = 0;
 unsigned long lastRtcRead = 0;
 unsigned long lastDisplayUpdate = 0;
 unsigned long wifiConnectionStart = 0;
+
+// Temperature reading variables
+unsigned long lastTemperatureRead = 0;
+float currentTemperature = 0.0;
 
 // Display update interval
 unsigned long displayUpdateInterval = 500;  // milliseconds
@@ -78,40 +82,11 @@ bool hourNotificationEnabled = true;
 bool playingHourNotification = false;
 unsigned long notificationStartTime = 0;
 byte notificationStep = 0;
-const unsigned long notificationStepDuration = 200;  // Duration of each tone step
-
-// Notification melody (frequencies in Hz)
-const int notificationMelody[] = { 523, 659, 783, 1047 };  // C5, E5, G5, C6
-const int notificationMelodyLength = 4;
 
 // Startup sound variables
 bool playingStartupSound = false;
 unsigned long startupSoundStartTime = 0;
 byte startupSoundStep = 0;
-const unsigned long startupSoundStepDuration = 150;  // Duration of each startup tone step
-
-// Startup melody - smooth, cute and playful ascending melody
-const int startupMelody[] = {
-  392,  // G4
-  440,  // A4
-  523,  // C5
-  587,  // D5
-  659,  // E5
-  784,  // G5
-  880   // A5
-};
-const int startupMelodyLength = 7;
-
-// Startup sound note durations (in milliseconds)
-const int startupNoteDurations[] = {
-  120,  // G4 - short
-  120,  // A4 - short
-  180,  // C5 - medium
-  120,  // D5 - short
-  120,  // E5 - short
-  200,  // G5 - long
-  300   // A5 - longest (finale)
-};
 
 // Display
 HDSPDisplay HDSP(SER, SRCLK, RCLK);
@@ -185,6 +160,9 @@ void loop() {
   // Update time source
   updateTimeSource();
 
+  // Update temperature reading
+  updateTemperature();
+
   // Handle hour notification
   handleHourNotification();
 
@@ -197,7 +175,8 @@ void loop() {
       case 0: displayUpdateInterval = 500; break;   // time updates every 500ms
       case 1: displayUpdateInterval = 1000; break;  // year+month updates every 1s
       case 2: displayUpdateInterval = 1000; break;  // day+name updates every 1s
-      case 3:
+      case 3: displayUpdateInterval = 2000; break;  // temperature updates every 2s
+      case 4:
         // Timer mode - handle separately
         HDSP.displayText(" TIMER  ");
         break;
@@ -214,6 +193,18 @@ void loop() {
   if (!showingModeTitle && !playingHourNotification) {
     // In normal mode - update display based on current mode
     updateTDDisplay();
+  }
+}
+
+void updateTemperature() {
+  // Read temperature from RTC every temperatureReadInterval
+  if (rtcAvailable && (millis() - lastTemperatureRead >= temperatureReadInterval)) {
+    lastTemperatureRead = millis();
+    currentTemperature = rtc.getTemperature();
+
+    Serial.print("Temperature read: ");
+    Serial.print(currentTemperature);
+    Serial.println(" °C");
   }
 }
 
@@ -346,7 +337,7 @@ void handleButtons() {
   });
 
   // CONFIRM button could be used for mode-specific functions
-  if (currentMode == 3 && !showingModeTitle) {  // Timer mode
+  if (currentMode == 4 && !showingModeTitle) {  // Timer mode (now mode 4)
     debounceBtn(CONFIRM_BTN, &confirmState, &lastConfirmState, &lastDebounceTimeConfirm, []() {
       // Handle timer start/stop
       Serial.println("Timer function");
@@ -497,8 +488,8 @@ void updateTDDisplay() {
   if (millis() - lastDisplayUpdate >= displayUpdateInterval) {
     lastDisplayUpdate = millis();
 
-    // If no time source is available, display error
-    if (!gpsAvailable && !ntpAvailable && !rtcAvailable) {
+    // If no time source is available for time modes, display error
+    if ((currentMode == 0 || currentMode == 1 || currentMode == 2) && !gpsAvailable && !ntpAvailable && !rtcAvailable) {
       HDSP.displayText(" NO T&D ");
     } else {
       switch (currentMode) {
@@ -514,8 +505,16 @@ void updateTDDisplay() {
         case 2:
           HDSP.displayDayAndName(currentTime.day, currentTime.dayIndex);
           break;
-        // timer mode
+        // temperature (-24.5 C-)
         case 3:
+          if (rtcAvailable) {
+            HDSP.displayTemperature(currentTemperature);
+          } else {
+            HDSP.displayText("NO TEMP ");
+          }
+          break;
+        // timer mode
+        case 4:
           HDSP.displayText(" TIMER  ");
           break;
       }
