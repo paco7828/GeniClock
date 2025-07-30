@@ -3,7 +3,7 @@
 1x Red 0805 LED - https://www.hestore.hu/prod_10043215.html
 1x Green 0805 LED - https://www.hestore.hu/prod_10036384.html
 2x 1kR 0402 resistor - https://www.hestore.hu/prod_10030528.html
-4x 10uF 0805 capacitor - https://www.hestore.hu/prod_10032047.html
+3x 10uF 0805 capacitor - https://www.hestore.hu/prod_10032047.html
 1x TP4056 - https://www.hestore.hu/prod_10037291.html
 1x 1.2kR 0805 resistor - https://www.hestore.hu/prod_10001268.html
 1x DW01A - https://www.hestore.hu/prod_10046612.html
@@ -19,9 +19,9 @@
 1x JST cable 2.5mm 1x4 - https://www.hestore.hu/prod_10041605.html
 1x GPS module - https://www.aliexpress.com/item/1005006319024804.html?spm=a2g0o.productlist.main.7.141c7767OSoYO4&algo_pvid=d3817907-30cc-4756-8a5f-23e6b7ce8b5d&algo_exp_id=d3817907-30cc-4756-8a5f-23e6b7ce8b5d-6&pdp_ext_f=%7B%22order%22%3A%2228%22%2C%22eval%22%3A%221%22%7D&pdp_npi=4%40dis%21HUF%214623.82%213375.21%21%21%2112.85%219.38%21%40211b6c1917506251505821457e4045%2112000036744974497%21sea%21HU%213401871641%21X&curPageLogUid=cl2AHVXMHqzJ&utparam-url=scene%3Asearch%7Cquery_from%3A
 1x JST connector 2.5mm 1x2 - https://www.hestore.hu/prod_10041549.html
-1x 4.7uF 0805 capacitor - https://www.hestore.hu/prod_10033975.html
-1x 4.7uH inductor - https://www.hestore.hu/prod_10039254.html
-1x MCP1624T-I/CHY - https://www.hestore.hu/prod_10032041.html
-1x 1.5MR 0805 resistor - https://www.hestore.hu/prod_10001251.html
-1x 470kR 0805 resistor - https://www.hestore.hu/prod_10001179.html
-2x 74HC595 smd - https://www.hestore.hu/prod_10039401.html
+2x 22uF 0805 capacitor - https://www.hestore.hu/prod_10044732.html
+1x 10uH inductor - https://www.hestore.hu/prod_10039243.html
+1x MT3608 IC - https://www.aliexpress.com/item/1005008061073566.html?spm=a2g0o.productlist.main.11.d060T8wzT8wzqQ&algo_pvid=fb0e0cf0-d888-42b7-a377-af09f1d29778&algo_exp_id=fb0e0cf0-d888-42b7-a377-af09f1d29778-10&pdp_ext_f=%7B%22order%22%3A%22124%22%2C%22eval%22%3A%221%22%7D&pdp_npi=4%40dis%21HUF%21500.91%21351.68%21%21%2110.12%217.10%21%402103919917538697309214440e2691%2112000043495912957%21sea%21HU%216419038792%21ABX&curPageLogUid=fEOuN7Anbt7m&utparam-url=scene%3Asearch%7Cquery_from%3A
+1x 2.2kR 0805 resistor - https://www.hestore.hu/prod_10040677.html
+1x 300R 0805 resistor - https://www.hestore.hu/prod_10032954.html
+2x SN74HC595 - https://www.hestore.hu/prod_10021551.html
