@@ -4,16 +4,16 @@
 
 class NTP {
 private:
-  char* SSID;
-  char* PASSW;
+  String SSID;
+  String PASSW;
   struct tm timeInfo;
   bool hasValidTime;    // Track if we have valid time data
   bool ntpInitialized;  // Track if NTP has been initialized
 
 public:
-  NTP(char* ssid, char* passw) {
-    this->SSID = ssid;
-    this->PASSW = passw;
+  NTP(const char* ssid, const char* passw) {
+    this->SSID = String(ssid);
+    this->PASSW = String(passw);
     this->hasValidTime = false;
     this->ntpInitialized = false;
   }
@@ -73,15 +73,15 @@ public:
     return hasValidTime ? timeInfo.tm_sec : 0;
   }
 
-  void setNewCredentials(char* ssid, char* passw) {
-    this->SSID = ssid;
-    this->PASSW = passw;
+  void setNewCredentials(const char* ssid, const char* passw) {
+    this->SSID = String(ssid);
+    this->PASSW = String(passw);
 
     WiFi.disconnect();
     ntpInitialized = false;
     hasValidTime = false;
 
-    WiFi.begin(this->SSID, this->PASSW);
+    WiFi.begin(this->SSID.c_str(), this->PASSW.c_str());
 
     Serial.print("Reconnecting to WiFi");
     while (WiFi.status() != WL_CONNECTED) {
@@ -92,5 +92,15 @@ public:
 
     // Reinitialize NTP
     this->begin();
+  }
+
+  // Get current credentials (for debugging)
+  String getSSID() {
+    return SSID;
+  }
+
+  // Check if credentials are set
+  bool hasCredentials() {
+    return (SSID.length() > 0);
   }
 };

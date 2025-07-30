@@ -2,6 +2,7 @@
 #include "HDSPDisplay.h"
 #include "gps.h"
 #include "ntp.h"
+#include "wifimanager.h"
 #include <Wire.h>
 #include <RTClib.h>
 
@@ -88,14 +89,21 @@ bool playingStartupSound = false;
 unsigned long startupSoundStartTime = 0;
 byte startupSoundStep = 0;
 
+// WiFi setup mode variables
+bool inWiFiSetupMode = false;
+bool wifiCredentialsAvailable = false;
+
 // Display
 HDSPDisplay HDSP(SER, SRCLK, RCLK);
 
 // GPS
 GPS gps;
 
-// NTP
-NTP ntp(SSID, PASSW);
+// NTP (will be initialized later with stored credentials)
+NTP *ntp = nullptr;
+
+// WiFi Manager
+WiFiManager wifiManager;
 
 // RTC
 RTC_DS3231 rtc;
@@ -130,24 +138,95 @@ void setup() {
     delay(1500);
   }
 
-  // Start startup sound and display sequence
-  playingStartupSound = true;
-  startupSoundStartTime = millis();
-  startupSoundStep = 0;
+  // Initialize WiFi Manager
+  wifiManager.begin();
 
-  // Show startup message
-  HDSP.displayText("- GENI -");
+  // Check if WiFi credentials are stored
+  if (wifiManager.hasStoredCredentials()) {
+    wifiCredentialsAvailable = true;
+    Serial.println("WiFi credentials found in storage");
 
-  // Play first startup tone
-  tone(BUZZER, startupMelody[0], startupNoteDurations[0]);
+    // Initialize NTP with stored credentials
+    String ssid, password;
+    wifiManager.getStoredCredentials(ssid, password);
+    ntp = new NTP(ssid.c_str(), password.c_str());
+  } else {
+    Serial.println("No WiFi credentials found - entering setup mode");
+    inWiFiSetupMode = true;
 
-  Serial.println("Startup sound started");
+    // Start AP for WiFi configuration
+    wifiManager.startAP();
+
+    // Show setup message
+    HDSP.displayText("SET WIFI");
+    delay(3000);
+
+    // Show AP info
+    HDSP.displayText("AP: CLOCK");
+    delay(2000);
+    HDSP.displayText("192.168.4.1");
+    delay(2000);
+  }
+
+  // Start startup sound and display sequence only if not in WiFi setup mode
+  if (!inWiFiSetupMode) {
+    playingStartupSound = true;
+    startupSoundStartTime = millis();
+    startupSoundStep = 0;
+
+    // Show startup message
+    HDSP.displayText("- GENI -");
+
+    // Play first startup tone
+    tone(BUZZER, startupMelody[0], startupNoteDurations[0]);
+
+    Serial.println("Startup sound started");
+  }
 
   // Initialize display update timer
   lastDisplayUpdate = millis();
 }
 
 void loop() {
+  // Handle WiFi setup mode
+  if (inWiFiSetupMode) {
+    wifiManager.handleClient();
+
+    // Check if credentials were saved
+    if (wifiManager.credentialsUpdated()) {
+      Serial.println("New WiFi credentials received");
+
+      // Get the new credentials
+      String ssid, password;
+      wifiManager.getStoredCredentials(ssid, password);
+
+      // Initialize NTP with new credentials
+      if (ntp) delete ntp;
+      ntp = new NTP(ssid.c_str(), password.c_str());
+
+      // Exit setup mode
+      inWiFiSetupMode = false;
+      wifiCredentialsAvailable = true;
+      wifiManager.stopAP();
+
+      showStatusMessage("WIFI SET");
+
+      // Start startup sequence
+      playingStartupSound = true;
+      startupSoundStartTime = millis();
+      startupSoundStep = 0;
+
+      // Show startup message
+      HDSP.displayText("- GENI -");
+
+      // Play first startup tone
+      tone(BUZZER, startupMelody[0], startupNoteDurations[0]);
+
+      Serial.println("Startup sound started");
+    }
+    return;
+  }
+
   // Handle startup sound first
   if (playingStartupSound) {
     handleStartupSound();
@@ -157,8 +236,10 @@ void loop() {
   // Handle button presses
   handleButtons();
 
-  // Update time source
-  updateTimeSource();
+  // Update time source (only if WiFi credentials are available)
+  if (wifiCredentialsAvailable) {
+    updateTimeSource();
+  }
 
   // Update temperature reading
   updateTemperature();
@@ -336,13 +417,38 @@ void handleButtons() {
     startModeSwitch(newMode);
   });
 
-  // CONFIRM button could be used for mode-specific functions
-  if (currentMode == 4 && !showingModeTitle) {  // Timer mode (now mode 4)
-    debounceBtn(CONFIRM_BTN, &confirmState, &lastConfirmState, &lastDebounceTimeConfirm, []() {
+  // CONFIRM button could be used for mode-specific functions or WiFi setup
+  debounceBtn(CONFIRM_BTN, &confirmState, &lastConfirmState, &lastDebounceTimeConfirm, []() {
+    if (currentMode == 4 && !showingModeTitle) {  // Timer mode (now mode 4)
       // Handle timer start/stop
       Serial.println("Timer function");
-    });
-  }
+    } else {
+      // Long press CONFIRM button to enter WiFi setup mode
+      static unsigned long confirmPressStart = 0;
+      static bool confirmPressed = false;
+
+      if (!confirmPressed) {
+        confirmPressed = true;
+        confirmPressStart = millis();
+      }
+
+      // Check for long press (3 seconds)
+      if (millis() - confirmPressStart >= 3000) {
+        confirmPressed = false;
+
+        // Enter WiFi setup mode
+        Serial.println("Entering WiFi setup mode");
+        inWiFiSetupMode = true;
+        wifiManager.startAP();
+
+        showStatusMessage("SET WIFI");
+        delay(1000);
+        HDSP.displayText("AP: CLOCK");
+        delay(2000);
+        HDSP.displayText("192.168.4.1");
+      }
+    }
+  });
 
   // CANCEL button toggles hour notification on/off
   debounceBtn(CANCEL_BTN, &cancelState, &lastCancelState, &lastDebounceTimeCancel, []() {
@@ -398,15 +504,18 @@ void updateTimeSource() {
     }
   }
 
-  // If GPS not available, try NTP (medium priority)
-  if (!gpsAvailable) {
+  // If GPS not available, try NTP (medium priority) - only if we have WiFi credentials
+  if (!gpsAvailable && ntp != nullptr) {
     // Try to connect to WiFi if not connected and not currently connecting
     if (!wifiConnected && !wifiConnecting && (millis() - lastNtpAttempt > ntpRetryInterval)) {
       lastNtpAttempt = millis();
       wifiConnecting = true;
       wifiConnectionStart = millis();
       Serial.println("Starting WiFi connection...");
-      WiFi.begin(SSID, PASSW);
+
+      String ssid, password;
+      wifiManager.getStoredCredentials(ssid, password);
+      WiFi.begin(ssid.c_str(), password.c_str());
     }
 
     // Check WiFi connection status if we're currently connecting
@@ -415,7 +524,7 @@ void updateTimeSource() {
         wifiConnected = true;
         wifiConnecting = false;
         Serial.println("WiFi connected, initializing NTP...");
-        ntp.begin();
+        ntp->begin();
       } else if (millis() - wifiConnectionStart > 8000) {  // 8 second timeout
         wifiConnecting = false;
         Serial.println("WiFi connection timeout");
@@ -423,7 +532,7 @@ void updateTimeSource() {
       }
     }
 
-    if (wifiConnected && ntp.update()) {
+    if (wifiConnected && ntp->update()) {
       if (!ntpAvailable) {
         ntpAvailable = true;
         Serial.println("NTP time acquired");
@@ -431,13 +540,13 @@ void updateTimeSource() {
       }
 
       // Use NTP data
-      currentTime.year = ntp.getYear();
-      currentTime.month = ntp.getMonth();
-      currentTime.day = ntp.getDay();
-      currentTime.dayIndex = ntp.getDayIndex();
-      currentTime.hour = ntp.getHour();
-      currentTime.minute = ntp.getMinute();
-      currentTime.second = ntp.getSecond();
+      currentTime.year = ntp->getYear();
+      currentTime.month = ntp->getMonth();
+      currentTime.day = ntp->getDay();
+      currentTime.dayIndex = ntp->getDayIndex();
+      currentTime.hour = ntp->getHour();
+      currentTime.minute = ntp->getMinute();
+      currentTime.second = ntp->getSecond();
       timeUpdated = true;
 
       // Adjust RTC time to NTP time (only if GPS is not available)
@@ -487,6 +596,12 @@ void updateTDDisplay() {
   // Regular display updates (only when not showing mode title)
   if (millis() - lastDisplayUpdate >= displayUpdateInterval) {
     lastDisplayUpdate = millis();
+
+    // If in WiFi setup mode and no credentials available, show setup message
+    if (!wifiCredentialsAvailable) {
+      HDSP.displayText("SET WIFI");
+      return;
+    }
 
     // If no time source is available for time modes, display error
     if ((currentMode == 0 || currentMode == 1 || currentMode == 2) && !gpsAvailable && !ntpAvailable && !rtcAvailable) {
