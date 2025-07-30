@@ -112,7 +112,7 @@ public:
 
   void displayDayAndName(byte day, byte dayIndex) {
     char buffer[9];
-    sprintf(buffer, " %02d %s ", day, daysOfWeek[dayIndex]);
+    sprintf(buffer, " %02d %s ", day, DAYS_OF_WEEK[dayIndex]);
     this->displayText(buffer);
   }
 
@@ -132,6 +132,47 @@ public:
     } else {
       // For single digit negative temperatures: "--5.2 C-"
       sprintf(buffer, " -%03.1f C ", abs(temperature));
+    }
+
+    this->displayText(buffer);
+  }
+
+  void displayGPSLatitude(double latitude) {
+    char buffer[9];
+
+    // Format latitude with appropriate precision for 8 characters
+    if (latitude >= 0) {
+      sprintf(buffer, " %06.3f ", latitude);
+    } else {
+      sprintf(buffer, "%07.3f ", latitude);
+    }
+
+    this->displayText(buffer);
+  }
+
+  void displayGPSLongitude(double longitude) {
+    char buffer[9];
+
+    // Format longitude with appropriate precision for 8 characters
+    if (longitude >= 0) {
+      sprintf(buffer, " %06.3f ", longitude);
+    } else {
+      sprintf(buffer, "%07.3f ", longitude);
+    }
+
+    this->displayText(buffer);
+  }
+
+  void displayGPSSpeed(double speed) {
+    char buffer[9];
+
+    // Format speed in km/h
+    if (speed >= 100.0) {
+      sprintf(buffer, "%03.0f KMH ", speed);
+    } else if (speed >= 10.0) {
+      sprintf(buffer, " %04.1f K ", speed);
+    } else {
+      sprintf(buffer, " %04.2f K ", speed);
     }
 
     this->displayText(buffer);

@@ -44,10 +44,10 @@ byte currentMode = 0;  // Start with HH:MM:SS mode
 2 -> day+short day name
 3 -> temperature
 4 -> timer
+5 -> GPS latitude
+6 -> GPS longitude
+7 -> GPS speed
 */
-
-// Settings index inside modes
-byte currentSetting = 0;
 
 // Mode title display state
 bool showingModeTitle = false;
@@ -162,9 +162,11 @@ void setup() {
     delay(3000);
 
     // Show AP info
-    HDSP.displayText("AP: CLOCK");
+    HDSP.displayText("AP:CLOCK");
     delay(2000);
-    HDSP.displayText("192.168.4.1");
+    HDSP.displayText("192.168");
+    delay(2000);
+    HDSP.displayText("   .4.1");
     delay(2000);
   }
 
@@ -178,7 +180,7 @@ void setup() {
     HDSP.displayText("- GENI -");
 
     // Play first startup tone
-    tone(BUZZER, startupMelody[0], startupNoteDurations[0]);
+    tone(BUZZER, STARTUP_MELODY[0], STARTUP_NOTE_DURATIONS[0]);
 
     Serial.println("Startup sound started");
   }
@@ -220,7 +222,7 @@ void loop() {
       HDSP.displayText("- GENI -");
 
       // Play first startup tone
-      tone(BUZZER, startupMelody[0], startupNoteDurations[0]);
+      tone(BUZZER, STARTUP_MELODY[0], STARTUP_NOTE_DURATIONS[0]);
 
       Serial.println("Startup sound started");
     }
@@ -261,6 +263,9 @@ void loop() {
         // Timer mode - handle separately
         HDSP.displayText(" TIMER  ");
         break;
+      case 5: displayUpdateInterval = 2000; break;  // GPS lat updates every 2s
+      case 6: displayUpdateInterval = 2000; break;  // GPS lon updates every 2s
+      case 7: displayUpdateInterval = 1000; break;  // GPS speed updates every 1s
     }
 
     Serial.print("Mode auto-confirmed: ");
@@ -278,8 +283,8 @@ void loop() {
 }
 
 void updateTemperature() {
-  // Read temperature from RTC every temperatureReadInterval
-  if (rtcAvailable && (millis() - lastTemperatureRead >= temperatureReadInterval)) {
+  // Read temperature from RTC
+  if (rtcAvailable && (millis() - lastTemperatureRead >= TEMPERATURE_READ_INTERVAL)) {
     lastTemperatureRead = millis();
     currentTemperature = rtc.getTemperature();
 
@@ -291,18 +296,18 @@ void updateTemperature() {
 
 void handleStartupSound() {
   // Check if it's time to play the next note
-  if (millis() - startupSoundStartTime >= startupNoteDurations[startupSoundStep]) {
+  if (millis() - startupSoundStartTime >= STARTUP_NOTE_DURATIONS[startupSoundStep]) {
     startupSoundStep++;
 
-    if (startupSoundStep < startupMelodyLength) {
+    if (startupSoundStep < STARTUP_MELODY_LENGTH) {
       // Play next note in startup melody
       startupSoundStartTime = millis();
-      tone(BUZZER, startupMelody[startupSoundStep], startupNoteDurations[startupSoundStep]);
+      tone(BUZZER, STARTUP_MELODY[startupSoundStep], STARTUP_NOTE_DURATIONS[startupSoundStep]);
 
       Serial.print("Playing startup note ");
       Serial.print(startupSoundStep + 1);
       Serial.print("/");
-      Serial.println(startupMelodyLength);
+      Serial.println(STARTUP_MELODY_LENGTH);
     } else {
       // Startup sound finished
       playingStartupSound = false;
@@ -341,7 +346,7 @@ void handleHourNotification() {
     Serial.println(":00");
 
     // Play first tone
-    tone(BUZZER, notificationMelody[0], notificationStepDuration);
+    tone(BUZZER, NOTIF_MELODY[0], NOTIF_STEP_DURATION);
 
     // Show hour notification on display
     char hourMsg[9];
@@ -351,12 +356,12 @@ void handleHourNotification() {
 
   // Handle notification progression
   if (playingHourNotification) {
-    if (millis() - notificationStartTime >= (notificationStep + 1) * notificationStepDuration) {
+    if (millis() - notificationStartTime >= (notificationStep + 1) * NOTIF_STEP_DURATION) {
       notificationStep++;
 
-      if (notificationStep < notificationMelodyLength) {
+      if (notificationStep < NOTIF_MELODY_LENGTH) {
         // Play next tone
-        tone(BUZZER, notificationMelody[notificationStep], notificationStepDuration);
+        tone(BUZZER, NOTIF_MELODY[notificationStep], NOTIF_STEP_DURATION);
       } else {
         // Notification finished
         playingHourNotification = false;
@@ -397,8 +402,6 @@ void startModeSwitch(byte newMode) {
 }
 
 void handleButtons() {
-  // In normal display mode - simplified button handling
-
   // ADD button cycles forward through modes
   debounceBtn(ADD_BTN, &addState, &lastAddState, &lastDebounceTimeAdd, []() {
     byte newMode = currentMode + 1;
@@ -443,9 +446,11 @@ void handleButtons() {
 
         showStatusMessage("SET WIFI");
         delay(1000);
-        HDSP.displayText("AP: CLOCK");
+        HDSP.displayText("AP:CLOCK");
         delay(2000);
-        HDSP.displayText("192.168.4.1");
+        HDSP.displayText("192.168");
+        delay(1000);
+        HDSP.displayText("   .4.1");
       }
     }
   });
@@ -505,9 +510,9 @@ void updateTimeSource() {
   }
 
   // If GPS not available, try NTP (medium priority) - only if we have WiFi credentials
-  if (!gpsAvailable && ntp != nullptr) {
+  if (!gpsAvailable && ntp != nullptr && wifiCredentialsAvailable) {
     // Try to connect to WiFi if not connected and not currently connecting
-    if (!wifiConnected && !wifiConnecting && (millis() - lastNtpAttempt > ntpRetryInterval)) {
+    if (!wifiConnected && !wifiConnecting && (millis() - lastNtpAttempt > NTP_RETRY_INTERVAL)) {
       lastNtpAttempt = millis();
       wifiConnecting = true;
       wifiConnectionStart = millis();
@@ -524,6 +529,7 @@ void updateTimeSource() {
         wifiConnected = true;
         wifiConnecting = false;
         Serial.println("WiFi connected, initializing NTP...");
+        showStatusMessage("WIFI SET");  // Show WiFi connection success message
         ntp->begin();
       } else if (millis() - wifiConnectionStart > 8000) {  // 8 second timeout
         wifiConnecting = false;
@@ -557,13 +563,14 @@ void updateTimeSource() {
       if (ntpAvailable) {
         ntpAvailable = false;
         Serial.println("NTP time lost");
+        showStatusMessage("NTP LOST");
       }
     }
   }
 
   // If neither GPS nor NTP available, use RTC (lowest priority)
   if (!gpsAvailable && !ntpAvailable && rtcAvailable) {
-    if (millis() - lastRtcRead > rtcReadInterval) {
+    if (millis() - lastRtcRead > RTC_READ_INTERVAL) {
       lastRtcRead = millis();
 
       DateTime now = rtc.now();
@@ -586,7 +593,7 @@ void updateTimeSource() {
 void updateTDDisplay() {
   // Check if we're showing a status message
   if (showingStatusMessage) {
-    if (millis() - statusMessageStart >= statusMessageDuration) {
+    if (millis() - statusMessageStart >= STATUS_MSG_DURATION) {
       showingStatusMessage = false;
       lastDisplayUpdate = millis();  // Reset display timer to update immediately
     }
@@ -632,6 +639,30 @@ void updateTDDisplay() {
         case 4:
           HDSP.displayText(" TIMER  ");
           break;
+        // GPS latitude
+        case 5:
+          if (gpsAvailable) {
+            HDSP.displayGPSLatitude(gps.getLatitude());
+          } else {
+            HDSP.displayText(" NO GPS ");
+          }
+          break;
+        // GPS longitude
+        case 6:
+          if (gpsAvailable) {
+            HDSP.displayGPSLongitude(gps.getLongitude());
+          } else {
+            HDSP.displayText(" NO GPS ");
+          }
+          break;
+        // GPS speed
+        case 7:
+          if (gpsAvailable) {
+            HDSP.displayGPSSpeed(gps.getSpeedKmph());
+          } else {
+            HDSP.displayText(" NO GPS ");
+          }
+          break;
       }
     }
   }
@@ -647,7 +678,7 @@ void debounceBtn(byte btnPin, byte *btnState, byte *lastBtnState, unsigned long 
   }
 
   // If the reading has been stable for longer than the debounce delay
-  if ((millis() - *lastDebounceTime) > debounceDelay) {
+  if ((millis() - *lastDebounceTime) > DEBOUNCE_DELAY) {
     // If the button state has actually changed:
     if (reading != *btnState) {
       *btnState = reading;

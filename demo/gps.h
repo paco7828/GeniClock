@@ -109,7 +109,7 @@ private:
       }
     }
 
-    // Handle day underflow (shouldn't happen with positive offset, but just in case)
+    // Handle day underflow
     else if (hour < 0) {
       hour += 24;
       day--;
@@ -262,29 +262,5 @@ public:
 
     convertToHungarianTime(year, month, day, hour, minute, second);
     return calculateDayOfWeek(year, month, day);
-  }
-
-  // Debug function to check if DST is active
-  bool isDSTActive() {
-    if (!hasFix()) return false;
-
-    int year = gps.date.year();
-    int month = gps.date.month();
-    int day = gps.date.day();
-    int hour = gps.time.hour();
-
-    return isDaylightSavingTime(year, month, day, hour);
-  }
-
-  // Get current timezone offset being used
-  int getCurrentTimezoneOffset() {
-    if (!hasFix()) return 1;
-
-    int year = gps.date.year();
-    int month = gps.date.month();
-    int day = gps.date.day();
-    int hour = gps.time.hour();
-
-    return getHungarianTimezoneOffset(year, month, day, hour);
   }
 };

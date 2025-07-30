@@ -7,8 +7,8 @@ private:
   String SSID;
   String PASSW;
   struct tm timeInfo;
-  bool hasValidTime;    // Track if we have valid time data
-  bool ntpInitialized;  // Track if NTP has been initialized
+  bool hasValidTime;
+  bool ntpInitialized;
 
 public:
   NTP(const char* ssid, const char* passw) {
@@ -41,12 +41,8 @@ public:
     return false;
   }
 
-  bool hasTime() {
-    return this->hasValidTime;
-  }
-
   byte getMonth() {
-    return hasValidTime ? timeInfo.tm_mon + 1 : 0;  // tm_mon is 0-based, so add 1
+    return hasValidTime ? timeInfo.tm_mon + 1 : 0;  // tm_mon is 0 based => so add 1
   }
 
   byte getDay() {
@@ -71,36 +67,5 @@ public:
 
   byte getSecond() {
     return hasValidTime ? timeInfo.tm_sec : 0;
-  }
-
-  void setNewCredentials(const char* ssid, const char* passw) {
-    this->SSID = String(ssid);
-    this->PASSW = String(passw);
-
-    WiFi.disconnect();
-    ntpInitialized = false;
-    hasValidTime = false;
-
-    WiFi.begin(this->SSID.c_str(), this->PASSW.c_str());
-
-    Serial.print("Reconnecting to WiFi");
-    while (WiFi.status() != WL_CONNECTED) {
-      delay(500);
-      Serial.print(".");
-    }
-    Serial.println("\nWiFi reconnected!");
-
-    // Reinitialize NTP
-    this->begin();
-  }
-
-  // Get current credentials (for debugging)
-  String getSSID() {
-    return SSID;
-  }
-
-  // Check if credentials are set
-  bool hasCredentials() {
-    return (SSID.length() > 0);
   }
 };
