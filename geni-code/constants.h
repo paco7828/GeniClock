@@ -41,20 +41,20 @@ const byte MAX_MODE = 7;
 
 // Mode titles
 char* MODE_TITLES[] = {
-  "HH:MM:SS", // 14:00:00
-  "YYYY. MM", // 2025. 07
-  " DD --- ", // 10 Mon
-  "- TEMP -", // 25.6 C
+  "HH:MM:SS",  // 14:00:00
+  "YYYY. MM",  // 2025. 07
+  " DD --- ",  // 10 Mon
+  "- TEMP -",  // 25.6 C
   " TIMER  ",
-  "GPS LAT ", //
-  "GPS LON ", // 
+  "GPS LAT ",  //
+  "GPS LON ",  //
   "SPEED KM"
 };
 
 // Durations
-const int TITLE_SHOW_TIME = 2000;                    // 2 seconds
-const unsigned long STATUS_MSG_DURATION = 3000;    // 3 seconds
-const unsigned long NOTIF_STEP_DURATION = 200;  // milliseconds
+const int TITLE_SHOW_TIME = 2000;                // 2 seconds
+const unsigned long STATUS_MSG_DURATION = 3000;  // 3 seconds
+const unsigned long NOTIF_STEP_DURATION = 200;   // milliseconds
 const int STARTUP_NOTE_DURATIONS[] = {
   120,  // G4 - short
   120,  // A4 - short

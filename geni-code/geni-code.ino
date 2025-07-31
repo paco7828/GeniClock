@@ -540,7 +540,7 @@ void updateTimeSource() {
         wifiConnected = true;
         wifiConnecting = false;
         Serial.println("WiFi connected, initializing NTP...");
-        showStatusMessage("WIFI SET");                     // Show WiFi connection success message
+        showStatusMessage("WIFI SET");  // Show WiFi connection success message
         ntp.begin();
       } else if (millis() - wifiConnectionStart > WIFI_CONNECTION_TIMEOUT) {
         wifiConnecting = false;
