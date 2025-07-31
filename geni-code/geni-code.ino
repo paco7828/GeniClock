@@ -504,14 +504,26 @@ void updateTimeSource() {
       showStatusMessage(" GPS OK ");
     }
 
-    // Use GPS data
-    gps.getHungarianTime(currentTime.year, currentTime.month, currentTime.day,
-                         currentTime.dayIndex, currentTime.hour, currentTime.minute, currentTime.second);
+    // Temporary variables
+    int year, month, day, dayIndex, hour, minute, second;
+
+    // Retrieve GPS time
+    gps.getHungarianTime(year, month, day, dayIndex, hour, minute, second);
+
+    // Insert into structure
+    currentTime.year = year;
+    currentTime.month = month;
+    currentTime.day = day;
+    currentTime.dayIndex = dayIndex;
+    currentTime.hour = hour;
+    currentTime.minute = minute;
+    currentTime.second = second;
+
     timeUpdated = true;
 
-    // Adjust RTC time to GPS time
+    // RTC synchronization
     if (rtcAvailable) {
-      rtc.adjust(DateTime(currentTime.year, currentTime.month, currentTime.day, currentTime.hour, currentTime.minute, currentTime.second));
+      rtc.adjust(DateTime(year, month, day, hour, minute, second));
     }
   } else {
     if (gpsAvailable) {
@@ -520,9 +532,8 @@ void updateTimeSource() {
     }
   }
 
-  // If GPS not available, try NTP (medium priority) - only if we have WiFi credentials
+  // If GPS not available, try NTP (medium priority)
   if (!gpsAvailable && wifiCredentialsAvailable) {
-    // Try to connect to WiFi if not connected and not currently connecting
     if (!wifiConnected && !wifiConnecting && (millis() - lastNtpAttempt > NTP_RETRY_INTERVAL)) {
       lastNtpAttempt = millis();
       wifiConnecting = true;
@@ -534,13 +545,12 @@ void updateTimeSource() {
       WiFi.begin(ssid.c_str(), password.c_str());
     }
 
-    // Check WiFi connection status if we're currently connecting
     if (wifiConnecting) {
       if (WiFi.status() == WL_CONNECTED) {
         wifiConnected = true;
         wifiConnecting = false;
         Serial.println("WiFi connected, initializing NTP...");
-        showStatusMessage("WIFI SET");  // Show WiFi connection success message
+        showStatusMessage("WIFI SET");
         ntp.begin();
       } else if (millis() - wifiConnectionStart > WIFI_CONNECTION_TIMEOUT) {
         wifiConnecting = false;
@@ -556,7 +566,7 @@ void updateTimeSource() {
         showStatusMessage(" NTP OK ");
       }
 
-      // Use NTP data
+      // Set NTP time
       currentTime.year = ntp.getYear();
       currentTime.month = ntp.getMonth();
       currentTime.day = ntp.getDay();
@@ -564,11 +574,13 @@ void updateTimeSource() {
       currentTime.hour = ntp.getHour();
       currentTime.minute = ntp.getMinute();
       currentTime.second = ntp.getSecond();
+
       timeUpdated = true;
 
-      // Adjust RTC time to NTP time (only if GPS is not available)
+      // RTC synchronization
       if (rtcAvailable && !gpsAvailable) {
-        rtc.adjust(DateTime(currentTime.year, currentTime.month, currentTime.day, currentTime.hour, currentTime.minute, currentTime.second));
+        rtc.adjust(DateTime(currentTime.year, currentTime.month, currentTime.day,
+                            currentTime.hour, currentTime.minute, currentTime.second));
       }
     } else {
       if (ntpAvailable) {
@@ -587,7 +599,7 @@ void updateTimeSource() {
       DateTime now = rtc.now();
 
       if (now.isValid()) {
-        // Use RTC data
+        // Set RTC time
         currentTime.year = now.year();
         currentTime.month = now.month();
         currentTime.day = now.day();
@@ -595,6 +607,7 @@ void updateTimeSource() {
         currentTime.hour = now.hour();
         currentTime.minute = now.minute();
         currentTime.second = now.second();
+
         timeUpdated = true;
       }
     }
