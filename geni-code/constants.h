@@ -33,6 +33,7 @@ const char* DAYS_OF_WEEK[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
 const unsigned long NTP_RETRY_INTERVAL = 5000;         // 5 seconds
 const unsigned long RTC_READ_INTERVAL = 1000;          // 1 second
 const unsigned long TEMPERATURE_READ_INTERVAL = 2000;  // 2 seconds
+const unsigned long WIFI_CONNECTION_TIMEOUT = 8000;
 
 // Modes
 const byte MIN_MODE = 0;

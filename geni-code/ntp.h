@@ -11,11 +11,14 @@ private:
   bool ntpInitialized;
 
 public:
-  NTP(const char* ssid, const char* passw) {
-    this->SSID = String(ssid);
-    this->PASSW = String(passw);
+  NTP() {
     this->hasValidTime = false;
     this->ntpInitialized = false;
+  }
+
+  void setCredentials(const char* ssid, const char* passw) {
+    this->SSID = String(ssid);
+    this->PASSW = String(passw);
   }
 
   void begin() {

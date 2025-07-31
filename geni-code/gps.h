@@ -166,101 +166,68 @@ public:
     return gps.speed.kmph();
   }
 
-  int getYear() {
-    if (!hasFix()) return 0;
+  // Function that calculates Hungarian time once and fills all values
+  void getHungarianTime(int &year, int &month, int &day, int &dayIndex, int &hour, int &minute, int &second) {
+    if (!hasFix()) {
+      year = month = day = dayIndex = hour = minute = second = 0;
+      return;
+    }
 
-    int year = gps.date.year();
-    int month = gps.date.month();
-    int day = gps.date.day();
-    int hour = gps.time.hour();
-    int minute = gps.time.minute();
-    int second = gps.time.second();
+    // Get UTC time from GPS
+    year = gps.date.year();
+    month = gps.date.month();
+    day = gps.date.day();
+    hour = gps.time.hour();
+    minute = gps.time.minute();
+    second = gps.time.second();
 
+    // Convert to Hungarian time
     convertToHungarianTime(year, month, day, hour, minute, second);
+
+    // Calculate day index for the converted date
+    dayIndex = calculateDayOfWeek(year, month, day);
+  }
+
+  // Getter functions
+  int getYear() {
+    int year, month, day, dayIndex, hour, minute, second;
+    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
     return year;
   }
 
   byte getMonth() {
-    if (!hasFix()) return 0;
-
-    int year = gps.date.year();
-    int month = gps.date.month();
-    int day = gps.date.day();
-    int hour = gps.time.hour();
-    int minute = gps.time.minute();
-    int second = gps.time.second();
-
-    convertToHungarianTime(year, month, day, hour, minute, second);
+    int year, month, day, dayIndex, hour, minute, second;
+    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
     return month;
   }
 
   byte getDay() {
-    if (!hasFix()) return 0;
-
-    int year = gps.date.year();
-    int month = gps.date.month();
-    int day = gps.date.day();
-    int hour = gps.time.hour();
-    int minute = gps.time.minute();
-    int second = gps.time.second();
-
-    convertToHungarianTime(year, month, day, hour, minute, second);
+    int year, month, day, dayIndex, hour, minute, second;
+    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
     return day;
   }
 
   byte getHour() {
-    if (!hasFix()) return 0;
-
-    int year = gps.date.year();
-    int month = gps.date.month();
-    int day = gps.date.day();
-    int hour = gps.time.hour();
-    int minute = gps.time.minute();
-    int second = gps.time.second();
-
-    convertToHungarianTime(year, month, day, hour, minute, second);
+    int year, month, day, dayIndex, hour, minute, second;
+    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
     return hour;
   }
 
   byte getMinute() {
-    if (!hasFix()) return 0;
-
-    int year = gps.date.year();
-    int month = gps.date.month();
-    int day = gps.date.day();
-    int hour = gps.time.hour();
-    int minute = gps.time.minute();
-    int second = gps.time.second();
-
-    convertToHungarianTime(year, month, day, hour, minute, second);
+    int year, month, day, dayIndex, hour, minute, second;
+    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
     return minute;
   }
 
   byte getSecond() {
-    if (!hasFix()) return 0;
-
-    int year = gps.date.year();
-    int month = gps.date.month();
-    int day = gps.date.day();
-    int hour = gps.time.hour();
-    int minute = gps.time.minute();
-    int second = gps.time.second();
-
-    convertToHungarianTime(year, month, day, hour, minute, second);
+    int year, month, day, dayIndex, hour, minute, second;
+    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
     return second;
   }
 
   byte getDayIndex() {
-    if (!hasFix()) return 0;
-
-    int year = gps.date.year();
-    int month = gps.date.month();
-    int day = gps.date.day();
-    int hour = gps.time.hour();
-    int minute = gps.time.minute();
-    int second = gps.time.second();
-
-    convertToHungarianTime(year, month, day, hour, minute, second);
-    return calculateDayOfWeek(year, month, day);
+    int year, month, day, dayIndex, hour, minute, second;
+    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
+    return dayIndex;
   }
 };

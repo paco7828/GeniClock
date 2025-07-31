@@ -100,7 +100,7 @@ HDSPDisplay HDSP(SER, SRCLK, RCLK);
 GPS gps;
 
 // NTP (will be initialized later with stored credentials)
-NTP *ntp = nullptr;
+NTP ntp;
 
 // WiFi Manager
 WiFiManager wifiManager;
@@ -109,10 +109,13 @@ WiFiManager wifiManager;
 RTC_DS3231 rtc;
 
 void setup() {
-  Serial.begin(115200);  // Add serial for debugging
+  Serial.begin(115200);
 
   // Display
   HDSP.begin();
+
+  // Always show GENI first
+  HDSP.displayText("- GENI -");
 
   // Buttons
   pinMode(CONFIRM_BTN, INPUT_PULLUP);
@@ -134,8 +137,7 @@ void setup() {
     Serial.println("RTC initialized successfully");
   } else {
     Serial.println("RTC initialization failed");
-    HDSP.displayText("RTC FAIL");
-    delay(1500);
+    // RTC FAIL will be shown after startup sequence
   }
 
   // Initialize WiFi Manager
@@ -149,7 +151,7 @@ void setup() {
     // Initialize NTP with stored credentials
     String ssid, password;
     wifiManager.getStoredCredentials(ssid, password);
-    ntp = new NTP(ssid.c_str(), password.c_str());
+    ntp.setCredentials(ssid.c_str(), password.c_str());
   } else {
     Serial.println("No WiFi credentials found - entering setup mode");
     inWiFiSetupMode = true;
@@ -157,7 +159,8 @@ void setup() {
     // Start AP for WiFi configuration
     wifiManager.startAP();
 
-    // Show setup message
+    // Show setup message after GENI
+    delay(2000);
     HDSP.displayText("SET WIFI");
     delay(3000);
 
@@ -176,10 +179,7 @@ void setup() {
     startupSoundStartTime = millis();
     startupSoundStep = 0;
 
-    // Show startup message
-    HDSP.displayText("- GENI -");
-
-    // Play first startup tone
+    // GENI is already shown, play first startup tone
     tone(BUZZER, STARTUP_MELODY[0], STARTUP_NOTE_DURATIONS[0]);
 
     Serial.println("Startup sound started");
@@ -203,8 +203,7 @@ void loop() {
       wifiManager.getStoredCredentials(ssid, password);
 
       // Initialize NTP with new credentials
-      if (ntp) delete ntp;
-      ntp = new NTP(ssid.c_str(), password.c_str());
+      ntp.setCredentials(ssid.c_str(), password.c_str());
 
       // Exit setup mode
       inWiFiSetupMode = false;
@@ -243,8 +242,10 @@ void loop() {
     updateTimeSource();
   }
 
-  // Update temperature reading
-  updateTemperature();
+  // Update temperature reading (only when in temperature mode)
+  if (currentMode == 3) {
+    updateTemperature();
+  }
 
   // Handle hour notification
   handleHourNotification();
@@ -315,9 +316,11 @@ void handleStartupSound() {
 
       Serial.println("Startup sound finished");
 
-      // Show RTC status after startup sound
+      // Show status messages after startup sound
       if (rtcAvailable) {
         showStatusMessage(" RTC OK ");
+      } else {
+        showStatusMessage("RTC FAIL");  // Show RTC FAIL after startup
       }
 
       // Wait a bit before starting normal operation
@@ -379,10 +382,11 @@ void handleHourNotification() {
   lastHour = currentTime.hour;
 }
 
-void showStatusMessage(char *message) {
+// Simplified status message function
+void showStatusMessage(const char *message) {
   showingStatusMessage = true;
   statusMessageStart = millis();
-  HDSP.forceDisplayText(message);
+  HDSP.forceDisplayText((char *)message);
   Serial.print("Status message: ");
   Serial.println(message);
 }
@@ -401,9 +405,18 @@ void startModeSwitch(byte newMode) {
   Serial.println(MODE_TITLES[currentMode]);
 }
 
+// Button beep frequencies for unique press effects
+const int BUTTON_BEEP_FREQS[] = { 800, 1000, 1200, 600 };  // CONFIRM, CANCEL, ADD, SUBTRACT
+const int BUTTON_BEEP_DURATION = 50;
+
+void playButtonBeep(byte buttonIndex) {
+  tone(BUZZER, BUTTON_BEEP_FREQS[buttonIndex], BUTTON_BEEP_DURATION);
+}
+
 void handleButtons() {
   // ADD button cycles forward through modes
   debounceBtn(ADD_BTN, &addState, &lastAddState, &lastDebounceTimeAdd, []() {
+    playButtonBeep(2);
     byte newMode = currentMode + 1;
     if (newMode > MAX_MODE) newMode = MIN_MODE;
     startModeSwitch(newMode);
@@ -411,6 +424,7 @@ void handleButtons() {
 
   // SUBTRACT button cycles backward through modes
   debounceBtn(SUBTRACT_BTN, &subtractState, &lastSubtractState, &lastDebounceTimeSubtract, []() {
+    playButtonBeep(3);
     byte newMode;
     if (currentMode == MIN_MODE) {
       newMode = MAX_MODE;
@@ -422,7 +436,8 @@ void handleButtons() {
 
   // CONFIRM button could be used for mode-specific functions or WiFi setup
   debounceBtn(CONFIRM_BTN, &confirmState, &lastConfirmState, &lastDebounceTimeConfirm, []() {
-    if (currentMode == 4 && !showingModeTitle) {  // Timer mode (now mode 4)
+    playButtonBeep(0);
+    if (currentMode == 4 && !showingModeTitle) {
       // Handle timer start/stop
       Serial.println("Timer function");
     } else {
@@ -457,6 +472,7 @@ void handleButtons() {
 
   // CANCEL button toggles hour notification on/off
   debounceBtn(CANCEL_BTN, &cancelState, &lastCancelState, &lastDebounceTimeCancel, []() {
+    playButtonBeep(1);
     hourNotificationEnabled = !hourNotificationEnabled;
 
     if (hourNotificationEnabled) {
@@ -489,13 +505,8 @@ void updateTimeSource() {
     }
 
     // Use GPS data
-    currentTime.year = gps.getYear();
-    currentTime.month = gps.getMonth();
-    currentTime.day = gps.getDay();
-    currentTime.dayIndex = gps.getDayIndex();
-    currentTime.hour = gps.getHour();
-    currentTime.minute = gps.getMinute();
-    currentTime.second = gps.getSecond();
+    gps.getHungarianTime(currentTime.year, currentTime.month, currentTime.day,
+                         currentTime.dayIndex, currentTime.hour, currentTime.minute, currentTime.second);
     timeUpdated = true;
 
     // Adjust RTC time to GPS time
@@ -510,7 +521,7 @@ void updateTimeSource() {
   }
 
   // If GPS not available, try NTP (medium priority) - only if we have WiFi credentials
-  if (!gpsAvailable && ntp != nullptr && wifiCredentialsAvailable) {
+  if (!gpsAvailable && wifiCredentialsAvailable) {
     // Try to connect to WiFi if not connected and not currently connecting
     if (!wifiConnected && !wifiConnecting && (millis() - lastNtpAttempt > NTP_RETRY_INTERVAL)) {
       lastNtpAttempt = millis();
@@ -529,16 +540,16 @@ void updateTimeSource() {
         wifiConnected = true;
         wifiConnecting = false;
         Serial.println("WiFi connected, initializing NTP...");
-        showStatusMessage("WIFI SET");  // Show WiFi connection success message
-        ntp->begin();
-      } else if (millis() - wifiConnectionStart > 8000) {  // 8 second timeout
+        showStatusMessage("WIFI SET");                     // Show WiFi connection success message
+        ntp.begin();
+      } else if (millis() - wifiConnectionStart > WIFI_CONNECTION_TIMEOUT) {
         wifiConnecting = false;
         Serial.println("WiFi connection timeout");
         WiFi.disconnect();
       }
     }
 
-    if (wifiConnected && ntp->update()) {
+    if (wifiConnected && ntp.update()) {
       if (!ntpAvailable) {
         ntpAvailable = true;
         Serial.println("NTP time acquired");
@@ -546,13 +557,13 @@ void updateTimeSource() {
       }
 
       // Use NTP data
-      currentTime.year = ntp->getYear();
-      currentTime.month = ntp->getMonth();
-      currentTime.day = ntp->getDay();
-      currentTime.dayIndex = ntp->getDayIndex();
-      currentTime.hour = ntp->getHour();
-      currentTime.minute = ntp->getMinute();
-      currentTime.second = ntp->getSecond();
+      currentTime.year = ntp.getYear();
+      currentTime.month = ntp.getMonth();
+      currentTime.day = ntp.getDay();
+      currentTime.dayIndex = ntp.getDayIndex();
+      currentTime.hour = ntp.getHour();
+      currentTime.minute = ntp.getMinute();
+      currentTime.second = ntp.getSecond();
       timeUpdated = true;
 
       // Adjust RTC time to NTP time (only if GPS is not available)
