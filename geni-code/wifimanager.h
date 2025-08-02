@@ -1,3 +1,6 @@
+#ifndef WIFIMANAGER_H
+#define WIFIMANAGER_H
+
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Preferences.h>
@@ -15,14 +18,6 @@ private:
   String storedSSID;
   String storedPassword;
 
-  // Captive portal configuration
-  static const byte WIFI_CHANNEL = 6;
-  static const int DNS_INTERVAL = 30;
-  const IPAddress localIP = IPAddress(4, 3, 2, 1);
-  const IPAddress gatewayIP = IPAddress(4, 3, 2, 1);
-  const IPAddress subnetMask = IPAddress(255, 255, 255, 0);
-  const String localIPURL = "http://4.3.2.1";
-
 public:
   WiFiManager()
     : server(80), apRunning(false), credentialsChanged(false) {}
@@ -34,6 +29,11 @@ public:
     // Load stored credentials
     storedSSID = preferences.getString("ssid", "");
     storedPassword = preferences.getString("password", "");
+  }
+
+  // Check if WiFi credentials are stored and valid
+  bool hasStoredCredentials() {
+    return storedSSID.length() > 0;
   }
 
   void getStoredCredentials(String& ssid, String& password) {
@@ -98,7 +98,7 @@ private:
     WiFi.mode(WIFI_MODE_AP);
 
     // Configure the soft access point with specific IP and subnet mask
-    WiFi.softAPConfig(localIP, gatewayIP, subnetMask);
+    WiFi.softAPConfig(WIFI_LOCAL_IP, WIFI_GATEWAY_IP, WIFI_SUBNET_MASK);
 
     // Start the access point using constants from constants.h
     WiFi.softAP(AP_SSID, AP_PASSWORD, WIFI_CHANNEL, 0);
@@ -115,7 +115,7 @@ private:
 
   void setUpDNSServer() {
     dnsServer.setTTL(3600);
-    dnsServer.start(53, "*", localIP);
+    dnsServer.start(53, "*", WIFI_LOCAL_IP);
   }
 
   void setUpWebserver() {
@@ -132,22 +132,22 @@ private:
 
     // Common captive portal detection endpoints
     server.on("/generate_204", [this]() {
-      server.sendHeader("Location", localIPURL, true);
+      server.sendHeader("Location", WIFI_LOCAL_IP_URL, true);
       server.send(302, "text/plain", "");
     });  // android captive portal redirect
 
     server.on("/redirect", [this]() {
-      server.sendHeader("Location", localIPURL, true);
+      server.sendHeader("Location", WIFI_LOCAL_IP_URL, true);
       server.send(302, "text/plain", "");
     });  // microsoft redirect
 
     server.on("/hotspot-detect.html", [this]() {
-      server.sendHeader("Location", localIPURL, true);
+      server.sendHeader("Location", WIFI_LOCAL_IP_URL, true);
       server.send(302, "text/plain", "");
     });  // apple call home
 
     server.on("/canonical.html", [this]() {
-      server.sendHeader("Location", localIPURL, true);
+      server.sendHeader("Location", WIFI_LOCAL_IP_URL, true);
       server.send(302, "text/plain", "");
     });  // firefox captive portal call home
 
@@ -156,7 +156,7 @@ private:
     });  // firefox captive portal call home
 
     server.on("/ncsi.txt", [this]() {
-      server.sendHeader("Location", localIPURL, true);
+      server.sendHeader("Location", WIFI_LOCAL_IP_URL, true);
       server.send(302, "text/plain", "");
     });  // windows call home
 
@@ -177,7 +177,7 @@ private:
 
     // Catch-all handler for other requests - redirect to main page
     server.onNotFound([this]() {
-      server.sendHeader("Location", localIPURL, true);
+      server.sendHeader("Location", WIFI_LOCAL_IP_URL, true);
       server.send(302, "text/plain", "");
     });
   }
@@ -240,3 +240,5 @@ private:
     }
   }
 };
+
+#endif  // WIFIMANAGER_H

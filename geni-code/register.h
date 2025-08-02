@@ -1,3 +1,6 @@
+#ifndef REGISTER_H
+#define REGISTER_H
+
 class Register {
 private:
   byte SER;
@@ -24,3 +27,5 @@ public:
     digitalWrite(this->RCLK, HIGH);
   }
 };
+
+#endif  // REGISTER_H

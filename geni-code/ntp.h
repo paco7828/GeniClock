@@ -1,3 +1,6 @@
+#ifndef NTP_H
+#define NTP_H
+
 #include <WiFi.h>
 #include "time.h"
 #include "sntp.h"
@@ -70,3 +73,5 @@ public:
     return hasValidTime ? timeInfo.tm_sec : 0;
   }
 };
+
+#endif  // NTP_H

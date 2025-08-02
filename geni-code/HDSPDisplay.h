@@ -1,3 +1,6 @@
+#ifndef HDSP_DISPLAY_H
+#define HDSP_DISPLAY_H
+
 #include "register.h"
 
 class HDSPDisplay {
@@ -186,3 +189,5 @@ public:
     displayText(text);
   }
 };
+
+#endif  // HDSP_DISPLAY_H

@@ -1,10 +1,27 @@
+#ifndef GPS_H
+#define GPS_H
+
 #include <TinyGPSPlus.h>
 #include <HardwareSerial.h>
+#include "constants.h"
 
 class GPS {
 private:
   HardwareSerial gpsSerial;
   TinyGPSPlus gps;
+
+  // Cache for Hungarian time to avoid repeated calculations
+  struct HungarianTimeCache {
+    int year;
+    int month;
+    int day;
+    int dayIndex;
+    int hour;
+    int minute;
+    int second;
+    bool valid;
+    unsigned long lastUpdate;
+  } timeCache;
 
   // Zeller's Congruence to calculate day of the week
   int calculateDayOfWeek(int y, int m, int d) {
@@ -15,7 +32,10 @@ private:
     int k = y % 100;
     int j = y / 100;
     int f = d + 13 * (m + 1) / 5 + k + k / 4 + j / 4 + 5 * j;
-    return ((f + 5) % 7);  // Sunday = 0
+
+    // Correct Zeller's result: 0=Saturday, 1=Sunday, 2=Monday, etc.
+    // Convert to standard: 0=Sunday, 1=Monday, 2=Tuesday, ..., 6=Saturday
+    return (f + 1) % 7;
   }
 
   // Check if it's daylight saving time in Hungary (CEST)
@@ -136,9 +156,47 @@ private:
     }
   }
 
+  // Update the cache with fresh Hungarian time calculation
+  void updateTimeCache() {
+    if (!hasFix()) {
+      timeCache.valid = false;
+      return;
+    }
+
+    // Get UTC time from GPS
+    int year = gps.date.year();
+    int month = gps.date.month();
+    int day = gps.date.day();
+    int hour = gps.time.hour();
+    int minute = gps.time.minute();
+    int second = gps.time.second();
+
+    // Convert to Hungarian time
+    convertToHungarianTime(year, month, day, hour, minute, second);
+
+    // Update cache
+    timeCache.year = year;
+    timeCache.month = month;
+    timeCache.day = day;
+    timeCache.hour = hour;
+    timeCache.minute = minute;
+    timeCache.second = second;
+    timeCache.dayIndex = calculateDayOfWeek(year, month, day);
+    timeCache.valid = true;
+    timeCache.lastUpdate = millis();
+  }
+
+  // Check if cache is still valid
+  bool isCacheValid() {
+    return timeCache.valid && (millis() - timeCache.lastUpdate < GPS_CACHE_VALIDITY_MS);
+  }
+
 public:
   GPS()
-    : gpsSerial(1) {}
+    : gpsSerial(1) {
+    timeCache.valid = false;
+    timeCache.lastUpdate = 0;
+  }
 
   void begin(byte gpsRx) {
     gpsSerial.begin(9600, SERIAL_8N1, gpsRx, -1);
@@ -146,7 +204,10 @@ public:
 
   void update() {
     while (gpsSerial.available()) {
-      gps.encode(gpsSerial.read());
+      if (gps.encode(gpsSerial.read())) {
+        // New data available, invalidate cache
+        timeCache.valid = false;
+      }
     }
   }
 
@@ -173,61 +234,74 @@ public:
       return;
     }
 
-    // Get UTC time from GPS
-    year = gps.date.year();
-    month = gps.date.month();
-    day = gps.date.day();
-    hour = gps.time.hour();
-    minute = gps.time.minute();
-    second = gps.time.second();
+    // Check if we need to update the cache
+    if (!isCacheValid()) {
+      updateTimeCache();
+    }
 
-    // Convert to Hungarian time
-    convertToHungarianTime(year, month, day, hour, minute, second);
-
-    // Calculate day index for the converted date
-    dayIndex = calculateDayOfWeek(year, month, day);
+    // Return cached values
+    if (timeCache.valid) {
+      year = timeCache.year;
+      month = timeCache.month;
+      day = timeCache.day;
+      dayIndex = timeCache.dayIndex;
+      hour = timeCache.hour;
+      minute = timeCache.minute;
+      second = timeCache.second;
+    } else {
+      year = month = day = dayIndex = hour = minute = second = 0;
+    }
   }
 
-  // Getter functions
+  // Optimized getter functions - use cache instead of recalculating
   int getYear() {
-    int year, month, day, dayIndex, hour, minute, second;
-    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
-    return year;
+    if (!isCacheValid()) {
+      updateTimeCache();
+    }
+    return timeCache.valid ? timeCache.year : 0;
   }
 
   byte getMonth() {
-    int year, month, day, dayIndex, hour, minute, second;
-    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
-    return month;
+    if (!isCacheValid()) {
+      updateTimeCache();
+    }
+    return timeCache.valid ? timeCache.month : 0;
   }
 
   byte getDay() {
-    int year, month, day, dayIndex, hour, minute, second;
-    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
-    return day;
+    if (!isCacheValid()) {
+      updateTimeCache();
+    }
+    return timeCache.valid ? timeCache.day : 0;
   }
 
   byte getHour() {
-    int year, month, day, dayIndex, hour, minute, second;
-    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
-    return hour;
+    if (!isCacheValid()) {
+      updateTimeCache();
+    }
+    return timeCache.valid ? timeCache.hour : 0;
   }
 
   byte getMinute() {
-    int year, month, day, dayIndex, hour, minute, second;
-    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
-    return minute;
+    if (!isCacheValid()) {
+      updateTimeCache();
+    }
+    return timeCache.valid ? timeCache.minute : 0;
   }
 
   byte getSecond() {
-    int year, month, day, dayIndex, hour, minute, second;
-    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
-    return second;
+    if (!isCacheValid()) {
+      updateTimeCache();
+    }
+    return timeCache.valid ? timeCache.second : 0;
   }
 
   byte getDayIndex() {
-    int year, month, day, dayIndex, hour, minute, second;
-    getHungarianTime(year, month, day, dayIndex, hour, minute, second);
-    return dayIndex;
+    if (!isCacheValid()) {
+      updateTimeCache();
+    }
+    return timeCache.valid ? timeCache.dayIndex : 0;
   }
 };
+
+#endif  // GPS_H

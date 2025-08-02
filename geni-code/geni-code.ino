@@ -5,6 +5,7 @@
 #include "wifimanager.h"
 #include <Wire.h>
 #include <RTClib.h>
+#include "timer.h"
 
 // Last button states
 byte lastConfirmState = HIGH;
@@ -94,13 +95,11 @@ bool inWiFiSetupMode = false;
 bool wifiCredentialsAvailable = false;
 bool showingAPInfo = false;
 unsigned long lastAPInfoSwitch = 0;
-byte apInfoMode = 0; // 0=AP name, 1="PASSWORD", 2=actual password
-const unsigned long AP_INFO_SWITCH_INTERVAL = 2000; // 2 seconds
+byte apInfoMode = 0;  // 0=AP name, 1="PASSWORD", 2=actual password
 
 // Confirm button triple-press variables
 unsigned long firstConfirmPress = 0;
 byte confirmPressCount = 0;
-const unsigned long TRIPLE_PRESS_WINDOW = 3000;  // 3 seconds
 
 // Display
 HDSPDisplay HDSP(SER, SRCLK, RCLK);
@@ -117,12 +116,24 @@ WiFiManager wifiManager;
 // RTC
 RTC_DS3231 rtc;
 
+// Timer
+Timer timer(&HDSP, BUZZER);
+
 void setup() {
   // Display
   HDSP.begin();
 
   // Always show GENI first
   HDSP.displayText("- GENI -");
+
+  // Initialize time structure to prevent 00:00:00 display
+  currentTime.year = 2025;
+  currentTime.month = 1;
+  currentTime.day = 1;
+  currentTime.dayIndex = 3;  // Wednesday
+  currentTime.hour = 0;
+  currentTime.minute = 0;
+  currentTime.second = 0;
 
   // Buttons
   pinMode(CONFIRM_BTN, INPUT_PULLUP);
@@ -141,6 +152,21 @@ void setup() {
   Wire.begin(RTC_SDA, RTC_SCL);
   if (rtc.begin()) {
     rtcAvailable = true;
+
+    // Immediately read RTC time to avoid 00:00:00 display
+    DateTime now = rtc.now();
+    if (now.isValid()) {
+      currentTime.year = now.year();
+      currentTime.month = now.month();
+      currentTime.day = now.day();
+      currentTime.dayIndex = now.dayOfTheWeek();
+      currentTime.hour = now.hour();
+      currentTime.minute = now.minute();
+      currentTime.second = now.second();
+
+      // Initialize lastRtcRead so updateTimeSource doesn't wait
+      lastRtcRead = millis();
+    }
   }
   // RTC FAIL will be shown after startup sequence
 
@@ -187,7 +213,7 @@ void loop() {
   // Handle WiFi setup mode with captive portal
   if (inWiFiSetupMode) {
     wifiManager.handleClient();
-    
+
     // Handle AP info display switching
     handleAPInfoDisplay();
 
@@ -237,6 +263,14 @@ void loop() {
   // Handle button presses
   handleButtons();
 
+  // Check if timer wants to exit to main mode
+  if (currentMode == 4 && timer.shouldExitTimerMode()) {
+    timer.clearExitFlag();
+    currentMode = 0;  // Go back to HH:MM:SS mode
+    startModeSwitch(0);
+    return;
+  }
+
   // Update time source (only if WiFi credentials are available)
   if (wifiCredentialsAvailable) {
     updateTimeSource();
@@ -254,6 +288,11 @@ void loop() {
   if (showingModeTitle && (millis() - modeTitleStartTime >= TITLE_SHOW_TIME)) {
     showingModeTitle = false;
 
+    // For timer mode, trigger the setting title display
+    if (currentMode == 4) {
+      timer.forceShowSettingTitle();
+    }
+
     // Set appropriate update interval for selected mode
     switch (currentMode) {
       case 0: displayUpdateInterval = 500; break;   // time updates every 500ms
@@ -261,8 +300,7 @@ void loop() {
       case 2: displayUpdateInterval = 1000; break;  // day+name updates every 1s
       case 3: displayUpdateInterval = 2000; break;  // temperature updates every 2s
       case 4:
-        // Timer mode - handle separately
-        HDSP.displayText(" TIMER  ");
+        // Timer mode - handle separately, no need to set interval
         break;
       case 5: displayUpdateInterval = 2000; break;  // GPS lat updates every 2s
       case 6: displayUpdateInterval = 2000; break;  // GPS lon updates every 2s
@@ -282,11 +320,11 @@ void loop() {
 
 void handleAPInfoDisplay() {
   if (!showingAPInfo) return;
-  
+
   // Check if it's time to switch display
   if (millis() - lastAPInfoSwitch >= AP_INFO_SWITCH_INTERVAL) {
     lastAPInfoSwitch = millis();
-    
+
     // Check if someone has connected to the AP
     if (wifiManager.hasConnectedClients()) {
       // Show a message indicating captive portal is active
@@ -428,13 +466,14 @@ void startModeSwitch(byte newMode) {
   showingModeTitle = true;
   modeTitleStartTime = millis();
 
+  // Reset timer when entering timer mode
+  if (newMode == 4) {
+    timer.reset();
+  }
+
   // Show the title of the new mode
   HDSP.displayText(MODE_TITLES[currentMode]);
 }
-
-// Button beep frequencies for unique press effects
-const int BUTTON_BEEP_FREQS[] = { 800, 1000, 1200, 600 };  // CONFIRM, CANCEL, ADD, SUBTRACT
-const int BUTTON_BEEP_DURATION = 50;
 
 void playButtonBeep(byte buttonIndex) {
   tone(BUZZER, BUTTON_BEEP_FREQS[buttonIndex], BUTTON_BEEP_DURATION);
@@ -444,6 +483,14 @@ void handleButtons() {
   // ADD button cycles forward through modes
   debounceBtn(ADD_BTN, &addState, &lastAddState, &lastDebounceTimeAdd, []() {
     playButtonBeep(2);
+
+    // Handle timer mode functionality FIRST
+    if (currentMode == 4 && !showingModeTitle) {
+      timer.handleAddButton();
+      return;
+    }
+
+    // Regular mode switching
     byte newMode = currentMode + 1;
     if (newMode > MAX_MODE) newMode = MIN_MODE;
     startModeSwitch(newMode);
@@ -452,6 +499,14 @@ void handleButtons() {
   // SUBTRACT button cycles backward through modes
   debounceBtn(SUBTRACT_BTN, &subtractState, &lastSubtractState, &lastDebounceTimeSubtract, []() {
     playButtonBeep(3);
+
+    // Handle timer mode functionality FIRST
+    if (currentMode == 4 && !showingModeTitle) {
+      timer.handleSubtractButton();
+      return;
+    }
+
+    // Regular mode switching
     byte newMode;
     if (currentMode == MIN_MODE) {
       newMode = MAX_MODE;
@@ -464,6 +519,12 @@ void handleButtons() {
   // CONFIRM button could be used for mode-specific functions or WiFi setup
   debounceBtn(CONFIRM_BTN, &confirmState, &lastConfirmState, &lastDebounceTimeConfirm, []() {
     playButtonBeep(0);
+
+    // Handle timer mode functionality FIRST
+    if (currentMode == 4 && !showingModeTitle) {
+      timer.handleConfirmButton();
+      return;
+    }
 
     unsigned long currentTime = millis();
 
@@ -490,16 +551,26 @@ void handleButtons() {
       confirmPressCount = 1;
       firstConfirmPress = currentTime;
     }
-
-    // Handle timer mode functionality
-    if (currentMode == 4 && !showingModeTitle && confirmPressCount < 3) {
-      // TIMER FUNCTION HERE
-    }
   });
 
-  // CANCEL button toggles hour notification on/off
+  // CANCEL button toggles hour notification on/off OR handles timer cancel
   debounceBtn(CANCEL_BTN, &cancelState, &lastCancelState, &lastDebounceTimeCancel, []() {
     playButtonBeep(1);
+
+    // Handle timer mode functionality FIRST
+    if (currentMode == 4 && !showingModeTitle) {
+      timer.handleCancelButton();
+
+      // Check if timer wants to exit
+      if (timer.shouldExitTimerMode()) {
+        timer.clearExitFlag();
+        currentMode = 0;  // Go back to HH:MM:SS mode
+        startModeSwitch(0);
+      }
+      return;
+    }
+
+    // Regular cancel button functionality
     hourNotificationEnabled = !hourNotificationEnabled;
 
     if (hourNotificationEnabled) {
@@ -677,9 +748,9 @@ void updateTDDisplay() {
             HDSP.displayText("NO TEMP ");
           }
           break;
-        // timer mode
+          // timer mode
         case 4:
-          HDSP.displayText(" TIMER  ");
+          timer.update();  // This handles all timer logic and display
           break;
         // GPS latitude
         case 5:
