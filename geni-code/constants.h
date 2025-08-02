@@ -33,11 +33,7 @@ const char* DAYS_OF_WEEK[] = { "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" }
 const unsigned long NTP_RETRY_INTERVAL = 5000;         // 5 seconds
 const unsigned long RTC_READ_INTERVAL = 1000;          // 1 second
 const unsigned long TEMPERATURE_READ_INTERVAL = 2000;  // 2 seconds
-const unsigned long WIFI_CONNECTION_TIMEOUT = 8000;
-
-// Modes
-const byte MIN_MODE = 0;
-const byte MAX_MODE = 7;
+const unsigned long WIFI_CONNECTION_TIMEOUT = 8000;    // 8 seconds
 
 // Mode titles
 char* MODE_TITLES[] = {
@@ -46,10 +42,14 @@ char* MODE_TITLES[] = {
   " DD --- ",  // 10 Mon
   "- TEMP -",  // 25.6 C
   " TIMER  ",
-  "GPS LAT ",  //
-  "GPS LON ",  //
-  "SPEED KM"
+  "GPS LAT ",  // 20.12345
+  "GPS LON ",  // 10.12345
+  "SPEED KM" // 0 km/h
 };
+
+// Modes
+const byte MIN_MODE = 0;
+const byte MAX_MODE = sizeof(MODE_TITLES) / sizeof(MODE_TITLES[0]);
 
 // Durations
 const int TITLE_SHOW_TIME = 2000;                // 2 seconds
@@ -66,5 +66,5 @@ const int STARTUP_NOTE_DURATIONS[] = {
 };
 
 // WiFi Setup mode constants (Access Point)
-const char* AP_SSID = "--Geni--";
-const char* AP_PASSWORD = "clock123";
+const char* AP_SSID = " Geni ";
+const char* AP_PASSWORD = "GNCLK123";

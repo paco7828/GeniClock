@@ -24,8 +24,6 @@ public:
   void begin() {
     // Only initialize NTP if not already done and WiFi is connected
     if (!ntpInitialized && WiFi.status() == WL_CONNECTED) {
-      Serial.println("Initializing NTP...");
-
       // Set timezone to Hungary (CET/CEST)
       configTzTime("CET-1CEST,M3.5.0/2,M10.5.0/3", "pool.ntp.org");
 

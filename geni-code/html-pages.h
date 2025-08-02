@@ -105,7 +105,7 @@ const char *configHTML = R"rawliteral(
             
             <div class="form-group">
                 <label for="password">WiFi Password:</label>
-                <input type="password" id="password" name="password" value="%PASSWORD%">
+                <input type="text" id="password" name="password" value="%PASSWORD%">
             </div>
             
             <button type="submit" class="button">Save WiFi Settings</button>

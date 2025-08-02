@@ -92,6 +92,15 @@ byte startupSoundStep = 0;
 // WiFi setup mode variables
 bool inWiFiSetupMode = false;
 bool wifiCredentialsAvailable = false;
+bool showingAPInfo = false;
+unsigned long lastAPInfoSwitch = 0;
+byte apInfoMode = 0; // 0=AP name, 1="PASSWORD", 2=actual password
+const unsigned long AP_INFO_SWITCH_INTERVAL = 2000; // 2 seconds
+
+// Confirm button triple-press variables
+unsigned long firstConfirmPress = 0;
+byte confirmPressCount = 0;
+const unsigned long TRIPLE_PRESS_WINDOW = 3000;  // 3 seconds
 
 // Display
 HDSPDisplay HDSP(SER, SRCLK, RCLK);
@@ -109,8 +118,6 @@ WiFiManager wifiManager;
 RTC_DS3231 rtc;
 
 void setup() {
-  Serial.begin(115200);
-
   // Display
   HDSP.begin();
 
@@ -134,11 +141,8 @@ void setup() {
   Wire.begin(RTC_SDA, RTC_SCL);
   if (rtc.begin()) {
     rtcAvailable = true;
-    Serial.println("RTC initialized successfully");
-  } else {
-    Serial.println("RTC initialization failed");
-    // RTC FAIL will be shown after startup sequence
   }
+  // RTC FAIL will be shown after startup sequence
 
   // Initialize WiFi Manager
   wifiManager.begin();
@@ -146,31 +150,23 @@ void setup() {
   // Check if WiFi credentials are stored
   if (wifiManager.hasStoredCredentials()) {
     wifiCredentialsAvailable = true;
-    Serial.println("WiFi credentials found in storage");
 
     // Initialize NTP with stored credentials
     String ssid, password;
     wifiManager.getStoredCredentials(ssid, password);
     ntp.setCredentials(ssid.c_str(), password.c_str());
   } else {
-    Serial.println("No WiFi credentials found - entering setup mode");
     inWiFiSetupMode = true;
+    showingAPInfo = true;
+    lastAPInfoSwitch = millis();
+    apInfoMode = 0;
 
-    // Start AP for WiFi configuration
+    // Start AP with captive portal
     wifiManager.startAP();
 
     // Show setup message after GENI
     delay(2000);
-    HDSP.displayText("SET WIFI");
-    delay(3000);
-
-    // Show AP info
-    HDSP.displayText("AP:CLOCK");
-    delay(2000);
-    HDSP.displayText("192.168");
-    delay(2000);
-    HDSP.displayText("   .4.1");
-    delay(2000);
+    // AP info will be handled in the main loop
   }
 
   // Start startup sound and display sequence only if not in WiFi setup mode
@@ -181,8 +177,6 @@ void setup() {
 
     // GENI is already shown, play first startup tone
     tone(BUZZER, STARTUP_MELODY[0], STARTUP_NOTE_DURATIONS[0]);
-
-    Serial.println("Startup sound started");
   }
 
   // Initialize display update timer
@@ -190,14 +184,15 @@ void setup() {
 }
 
 void loop() {
-  // Handle WiFi setup mode
+  // Handle WiFi setup mode with captive portal
   if (inWiFiSetupMode) {
     wifiManager.handleClient();
+    
+    // Handle AP info display switching
+    handleAPInfoDisplay();
 
-    // Check if credentials were saved
+    // Check if credentials were saved via captive portal
     if (wifiManager.credentialsUpdated()) {
-      Serial.println("New WiFi credentials received");
-
       // Get the new credentials
       String ssid, password;
       wifiManager.getStoredCredentials(ssid, password);
@@ -208,6 +203,7 @@ void loop() {
       // Exit setup mode
       inWiFiSetupMode = false;
       wifiCredentialsAvailable = true;
+      showingAPInfo = false;
       wifiManager.stopAP();
 
       showStatusMessage("WIFI SET");
@@ -222,10 +218,14 @@ void loop() {
 
       // Play first startup tone
       tone(BUZZER, STARTUP_MELODY[0], STARTUP_NOTE_DURATIONS[0]);
-
-      Serial.println("Startup sound started");
     }
     return;
+  }
+
+  // Reset confirm press counter if timeout exceeded
+  if (confirmPressCount > 0 && (millis() - firstConfirmPress > TRIPLE_PRESS_WINDOW)) {
+    confirmPressCount = 0;
+    firstConfirmPress = 0;
   }
 
   // Handle startup sound first
@@ -269,9 +269,6 @@ void loop() {
       case 7: displayUpdateInterval = 1000; break;  // GPS speed updates every 1s
     }
 
-    Serial.print("Mode auto-confirmed: ");
-    Serial.println(MODE_TITLES[currentMode]);
-
     // Force immediate display update by setting lastDisplayUpdate to 0
     lastDisplayUpdate = 0;
   }
@@ -283,15 +280,65 @@ void loop() {
   }
 }
 
+void handleAPInfoDisplay() {
+  if (!showingAPInfo) return;
+  
+  // Check if it's time to switch display
+  if (millis() - lastAPInfoSwitch >= AP_INFO_SWITCH_INTERVAL) {
+    lastAPInfoSwitch = millis();
+    
+    // Check if someone has connected to the AP
+    if (wifiManager.hasConnectedClients()) {
+      // Show a message indicating captive portal is active
+      switch (apInfoMode) {
+        case 0:
+          HDSP.displayText("CAPTIVE ");
+          apInfoMode = 1;
+          break;
+        case 1:
+          HDSP.displayText("PORTAL  ");
+          apInfoMode = 2;
+          break;
+        case 2:
+          HDSP.displayText("ACTIVE  ");
+          apInfoMode = 0;
+          break;
+      }
+    } else {
+      // Show AP credentials in 3-step cycle
+      switch (apInfoMode) {
+        case 0:
+          {
+            String apText = "AP:" + String(AP_SSID);
+            char apBuffer[9];
+            apText.toCharArray(apBuffer, 9);
+            HDSP.displayText(apBuffer);
+            apInfoMode = 1;
+          }
+          break;
+        case 1:
+          HDSP.displayText("PASSWORD");
+          apInfoMode = 2;
+          break;
+        case 2:
+          {
+            String pwText = String(AP_PASSWORD);
+            char pwBuffer[9];
+            pwText.toCharArray(pwBuffer, 9);
+            HDSP.displayText(pwBuffer);
+            apInfoMode = 0;
+          }
+          break;
+      }
+    }
+  }
+}
+
 void updateTemperature() {
   // Read temperature from RTC
   if (rtcAvailable && (millis() - lastTemperatureRead >= TEMPERATURE_READ_INTERVAL)) {
     lastTemperatureRead = millis();
     currentTemperature = rtc.getTemperature();
-
-    Serial.print("Temperature read: ");
-    Serial.print(currentTemperature);
-    Serial.println(" °C");
   }
 }
 
@@ -304,17 +351,10 @@ void handleStartupSound() {
       // Play next note in startup melody
       startupSoundStartTime = millis();
       tone(BUZZER, STARTUP_MELODY[startupSoundStep], STARTUP_NOTE_DURATIONS[startupSoundStep]);
-
-      Serial.print("Playing startup note ");
-      Serial.print(startupSoundStep + 1);
-      Serial.print("/");
-      Serial.println(STARTUP_MELODY_LENGTH);
     } else {
       // Startup sound finished
       playingStartupSound = false;
       noTone(BUZZER);
-
-      Serial.println("Startup sound finished");
 
       // Show status messages after startup sound
       if (rtcAvailable) {
@@ -325,9 +365,6 @@ void handleStartupSound() {
 
       // Wait a bit before starting normal operation
       delay(500);
-
-      // Start showing time immediately (mode 0)
-      Serial.println("Starting in HH:MM:SS mode");
 
       // Force immediate display update
       lastDisplayUpdate = 0;
@@ -343,10 +380,6 @@ void handleHourNotification() {
     playingHourNotification = true;
     notificationStartTime = millis();
     notificationStep = 0;
-
-    Serial.print("Hour notification started for ");
-    Serial.print(currentTime.hour);
-    Serial.println(":00");
 
     // Play first tone
     tone(BUZZER, NOTIF_MELODY[0], NOTIF_STEP_DURATION);
@@ -372,8 +405,6 @@ void handleHourNotification() {
 
         // Force display update by resetting timer
         lastDisplayUpdate = 0;
-
-        Serial.println("Hour notification finished");
       }
     }
   }
@@ -387,8 +418,6 @@ void showStatusMessage(const char *message) {
   showingStatusMessage = true;
   statusMessageStart = millis();
   HDSP.forceDisplayText((char *)message);
-  Serial.print("Status message: ");
-  Serial.println(message);
 }
 
 void startModeSwitch(byte newMode) {
@@ -401,8 +430,6 @@ void startModeSwitch(byte newMode) {
 
   // Show the title of the new mode
   HDSP.displayText(MODE_TITLES[currentMode]);
-  Serial.print("Switching to mode: ");
-  Serial.println(MODE_TITLES[currentMode]);
 }
 
 // Button beep frequencies for unique press effects
@@ -437,36 +464,36 @@ void handleButtons() {
   // CONFIRM button could be used for mode-specific functions or WiFi setup
   debounceBtn(CONFIRM_BTN, &confirmState, &lastConfirmState, &lastDebounceTimeConfirm, []() {
     playButtonBeep(0);
-    if (currentMode == 4 && !showingModeTitle) {
-      // Handle timer start/stop
-      Serial.println("Timer function");
-    } else {
-      // Long press CONFIRM button to enter WiFi setup mode
-      static unsigned long confirmPressStart = 0;
-      static bool confirmPressed = false;
 
-      if (!confirmPressed) {
-        confirmPressed = true;
-        confirmPressStart = millis();
-      }
+    unsigned long currentTime = millis();
 
-      // Check for long press (3 seconds)
-      if (millis() - confirmPressStart >= 3000) {
-        confirmPressed = false;
+    // Check if this is within the triple-press window
+    if (currentTime - firstConfirmPress <= TRIPLE_PRESS_WINDOW) {
+      confirmPressCount++;
 
-        // Enter WiFi setup mode
-        Serial.println("Entering WiFi setup mode");
+      if (confirmPressCount >= 3) {
+        // Triple press detected - enter WiFi setup mode with captive portal
         inWiFiSetupMode = true;
+        showingAPInfo = true;
+        lastAPInfoSwitch = millis();
+        apInfoMode = 0;
         wifiManager.startAP();
 
-        showStatusMessage("SET WIFI");
-        delay(1000);
-        HDSP.displayText("AP:CLOCK");
-        delay(2000);
-        HDSP.displayText("192.168");
-        delay(1000);
-        HDSP.displayText("   .4.1");
+        showStatusMessage("AP MODE ");
+
+        // Reset press counter
+        confirmPressCount = 0;
+        firstConfirmPress = 0;
       }
+    } else {
+      // Start new press sequence
+      confirmPressCount = 1;
+      firstConfirmPress = currentTime;
+    }
+
+    // Handle timer mode functionality
+    if (currentMode == 4 && !showingModeTitle && confirmPressCount < 3) {
+      // TIMER FUNCTION HERE
     }
   });
 
@@ -477,10 +504,8 @@ void handleButtons() {
 
     if (hourNotificationEnabled) {
       showStatusMessage("BEEP ON ");
-      Serial.println("Hour notification enabled");
     } else {
       showStatusMessage("BEEP OFF");
-      Serial.println("Hour notification disabled");
 
       // Stop any currently playing notification
       if (playingHourNotification) {
@@ -500,7 +525,6 @@ void updateTimeSource() {
   if (gps.hasFix()) {
     if (!gpsAvailable) {
       gpsAvailable = true;
-      Serial.println("GPS fix acquired");
       showStatusMessage(" GPS OK ");
     }
 
@@ -528,7 +552,6 @@ void updateTimeSource() {
   } else {
     if (gpsAvailable) {
       gpsAvailable = false;
-      Serial.println("GPS fix lost");
     }
   }
 
@@ -538,7 +561,6 @@ void updateTimeSource() {
       lastNtpAttempt = millis();
       wifiConnecting = true;
       wifiConnectionStart = millis();
-      Serial.println("Starting WiFi connection...");
 
       String ssid, password;
       wifiManager.getStoredCredentials(ssid, password);
@@ -549,12 +571,10 @@ void updateTimeSource() {
       if (WiFi.status() == WL_CONNECTED) {
         wifiConnected = true;
         wifiConnecting = false;
-        Serial.println("WiFi connected, initializing NTP...");
         showStatusMessage("WIFI SET");
         ntp.begin();
       } else if (millis() - wifiConnectionStart > WIFI_CONNECTION_TIMEOUT) {
         wifiConnecting = false;
-        Serial.println("WiFi connection timeout");
         WiFi.disconnect();
       }
     }
@@ -562,7 +582,6 @@ void updateTimeSource() {
     if (wifiConnected && ntp.update()) {
       if (!ntpAvailable) {
         ntpAvailable = true;
-        Serial.println("NTP time acquired");
         showStatusMessage(" NTP OK ");
       }
 
@@ -585,7 +604,6 @@ void updateTimeSource() {
     } else {
       if (ntpAvailable) {
         ntpAvailable = false;
-        Serial.println("NTP time lost");
         showStatusMessage("NTP LOST");
       }
     }
@@ -628,9 +646,9 @@ void updateTDDisplay() {
   if (millis() - lastDisplayUpdate >= displayUpdateInterval) {
     lastDisplayUpdate = millis();
 
-    // If in WiFi setup mode and no credentials available, show setup message
-    if (!wifiCredentialsAvailable) {
-      HDSP.displayText("SET WIFI");
+    // If in WiFi setup mode and no credentials available, show AP info
+    if (!wifiCredentialsAvailable && showingAPInfo) {
+      // AP info is handled by handleAPInfoDisplay()
       return;
     }
 
