@@ -5,7 +5,9 @@
 #include "wifimanager.h"
 #include <Wire.h>
 #include <RTClib.h>
+#include <Preferences.h>
 #include "timer.h"
+#include "alarm.h"
 
 // Last button states
 byte lastConfirmState = HIGH;
@@ -45,9 +47,10 @@ byte currentMode = 0;  // Start with HH:MM:SS mode
 2 -> day+short day name
 3 -> temperature
 4 -> timer
-5 -> GPS latitude
-6 -> GPS longitude
-7 -> GPS speed
+5 -> alarm
+6 -> GPS latitude
+7 -> GPS longitude
+8 -> GPS speed
 */
 
 // Mode title display state
@@ -116,10 +119,19 @@ WiFiManager wifiManager;
 // RTC
 RTC_DS3231 rtc;
 
+// Preferences for persistent storage
+Preferences preferences;
+
 // Timer
 Timer timer(&HDSP, BUZZER);
 
+// Alarm - RENAMED from 'alarm' to 'alarmClock' to avoid conflict with system alarm() function
+Alarm alarmClock(&HDSP, BUZZER, &preferences);
+
 void setup() {
+  // Initialize preferences
+  preferences.begin("geniClock", false);
+
   // Display
   HDSP.begin();
 
@@ -271,6 +283,14 @@ void loop() {
     return;
   }
 
+  // Check if alarm wants to exit to main mode
+  if (currentMode == 5 && alarmClock.shouldExitAlarmMode()) {
+    alarmClock.clearExitFlag();
+    currentMode = 0;  // Go back to HH:MM:SS mode
+    startModeSwitch(0);
+    return;
+  }
+
   // Update time source (only if WiFi credentials are available)
   if (wifiCredentialsAvailable) {
     updateTimeSource();
@@ -279,6 +299,11 @@ void loop() {
   // Update temperature reading (only when in temperature mode)
   if (currentMode == 3) {
     updateTemperature();
+  }
+
+  // Check for alarm trigger (always check when alarm is enabled)
+  if (alarmClock.isAlarmEnabled()) {
+    alarmClock.checkAlarmTrigger(currentTime.hour, currentTime.minute, currentTime.second);
   }
 
   // Handle hour notification
@@ -293,6 +318,11 @@ void loop() {
       timer.forceShowSettingTitle();
     }
 
+    // For alarm mode, trigger the setting title display
+    if (currentMode == 5) {
+      alarmClock.forceShowSettingTitle();
+    }
+
     // Set appropriate update interval for selected mode
     switch (currentMode) {
       case 0: displayUpdateInterval = 500; break;   // time updates every 500ms
@@ -302,9 +332,12 @@ void loop() {
       case 4:
         // Timer mode - handle separately, no need to set interval
         break;
-      case 5: displayUpdateInterval = 2000; break;  // GPS lat updates every 2s
-      case 6: displayUpdateInterval = 2000; break;  // GPS lon updates every 2s
-      case 7: displayUpdateInterval = 1000; break;  // GPS speed updates every 1s
+      case 5:
+        // Alarm mode - handle separately, no need to set interval
+        break;
+      case 6: displayUpdateInterval = 2000; break;  // GPS lat updates every 2s
+      case 7: displayUpdateInterval = 2000; break;  // GPS lon updates every 2s
+      case 8: displayUpdateInterval = 1000; break;  // GPS speed updates every 1s
     }
 
     // Force immediate display update by setting lastDisplayUpdate to 0
@@ -471,6 +504,11 @@ void startModeSwitch(byte newMode) {
     timer.reset();
   }
 
+  // Reset alarm when entering alarm mode
+  if (newMode == 5) {
+    alarmClock.reset();
+  }
+
   // Show the title of the new mode
   HDSP.displayText(MODE_TITLES[currentMode]);
 }
@@ -490,6 +528,12 @@ void handleButtons() {
       return;
     }
 
+    // Handle alarm mode functionality FIRST
+    if (currentMode == 5 && !showingModeTitle) {
+      alarmClock.handleAddButton();
+      return;
+    }
+
     // Regular mode switching
     byte newMode = currentMode + 1;
     if (newMode > MAX_MODE) newMode = MIN_MODE;
@@ -503,6 +547,12 @@ void handleButtons() {
     // Handle timer mode functionality FIRST
     if (currentMode == 4 && !showingModeTitle) {
       timer.handleSubtractButton();
+      return;
+    }
+
+    // Handle alarm mode functionality FIRST
+    if (currentMode == 5 && !showingModeTitle) {
+      alarmClock.handleSubtractButton();
       return;
     }
 
@@ -523,6 +573,12 @@ void handleButtons() {
     // Handle timer mode functionality FIRST
     if (currentMode == 4 && !showingModeTitle) {
       timer.handleConfirmButton();
+      return;
+    }
+
+    // Handle alarm mode functionality FIRST
+    if (currentMode == 5 && !showingModeTitle) {
+      alarmClock.handleConfirmButton();
       return;
     }
 
@@ -553,7 +609,7 @@ void handleButtons() {
     }
   });
 
-  // CANCEL button toggles hour notification on/off OR handles timer cancel
+  // CANCEL button toggles hour notification on/off OR handles timer/alarm cancel
   debounceBtn(CANCEL_BTN, &cancelState, &lastCancelState, &lastDebounceTimeCancel, []() {
     playButtonBeep(1);
 
@@ -564,6 +620,19 @@ void handleButtons() {
       // Check if timer wants to exit
       if (timer.shouldExitTimerMode()) {
         timer.clearExitFlag();
+        currentMode = 0;  // Go back to HH:MM:SS mode
+        startModeSwitch(0);
+      }
+      return;
+    }
+
+    // Handle alarm mode functionality FIRST
+    if (currentMode == 5 && !showingModeTitle) {
+      alarmClock.handleCancelButton();
+
+      // Check if alarm wants to exit
+      if (alarmClock.shouldExitAlarmMode()) {
+        alarmClock.clearExitFlag();
         currentMode = 0;  // Go back to HH:MM:SS mode
         startModeSwitch(0);
       }
@@ -748,12 +817,16 @@ void updateTDDisplay() {
             HDSP.displayText("NO TEMP ");
           }
           break;
-          // timer mode
+        // timer mode
         case 4:
           timer.update();  // This handles all timer logic and display
           break;
-        // GPS latitude
+        // alarm mode
         case 5:
+          alarmClock.update();  // This handles all alarm logic and display
+          break;
+        // GPS latitude
+        case 6:
           if (gpsAvailable) {
             HDSP.displayGPSLatitude(gps.getLatitude());
           } else {
@@ -761,7 +834,7 @@ void updateTDDisplay() {
           }
           break;
         // GPS longitude
-        case 6:
+        case 7:
           if (gpsAvailable) {
             HDSP.displayGPSLongitude(gps.getLongitude());
           } else {
@@ -769,7 +842,7 @@ void updateTDDisplay() {
           }
           break;
         // GPS speed
-        case 7:
+        case 8:
           if (gpsAvailable) {
             HDSP.displayGPSSpeed(gps.getSpeedKmph());
           } else {
