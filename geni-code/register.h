@@ -1,5 +1,4 @@
-#ifndef REGISTER_H
-#define REGISTER_H
+#pragma once
 
 class Register {
 private:
@@ -27,5 +26,3 @@ public:
     digitalWrite(this->RCLK, HIGH);
   }
 };
-
-#endif  // REGISTER_H

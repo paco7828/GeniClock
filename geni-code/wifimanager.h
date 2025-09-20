@@ -1,5 +1,4 @@
-#ifndef WIFIMANAGER_H
-#define WIFIMANAGER_H
+#pragma once
 
 #include <WiFi.h>
 #include <WebServer.h>
@@ -240,5 +239,3 @@ private:
     }
   }
 };
-
-#endif  // WIFIMANAGER_H

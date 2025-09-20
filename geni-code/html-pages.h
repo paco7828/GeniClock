@@ -1,5 +1,4 @@
-#ifndef HTML_H
-#define HTML_H
+#pragma once
 
 // HTML page for WiFi configuration
 const char *configHTML = R"rawliteral(
@@ -334,5 +333,3 @@ const char *successHTML = R"rawliteral(
 </body>
 </html>
 )rawliteral";
-
-#endif  // HTML_H

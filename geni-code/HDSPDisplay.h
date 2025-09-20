@@ -1,5 +1,4 @@
-#ifndef HDSP_DISPLAY_H
-#define HDSP_DISPLAY_H
+#pragma once
 
 #include "register.h"
 
@@ -189,5 +188,3 @@ public:
     displayText(text);
   }
 };
-
-#endif  // HDSP_DISPLAY_H

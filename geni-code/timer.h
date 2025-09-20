@@ -1,5 +1,4 @@
-#ifndef TIMER_H
-#define TIMER_H
+#pragma once
 
 #include "HDSPDisplay.h"
 #include "constants.h"
@@ -20,12 +19,13 @@ private:
   // Countdown tracking
   unsigned long previousMillis;
 
-  // Timer alarm
+  // Timer alarm - FIXED timing variables
   bool alarmPlaying;
   unsigned long alarmStartTime;
   byte alarmStep;
   byte currentAlarmCycle;
   unsigned long alarmCycleGap;
+  unsigned long noteStartTime;  // Track individual note timing
 
   // Setting display state
   bool showingSettingTitle;
@@ -63,6 +63,7 @@ public:
     alarmStep = 0;
     currentAlarmCycle = 0;
     alarmCycleGap = 0;
+    noteStartTime = 0;  // Initialize note timing
     showingSettingTitle = true;
     settingTitleStartTime = millis();
     cancelPressCount = 0;
@@ -348,20 +349,23 @@ private:
     }
   }
 
-  // Start the timer alarm
+  // Start the timer alarm - FIXED initialization
   void startAlarm() {
     alarmPlaying = true;
     alarmStartTime = millis();
+    noteStartTime = millis();  // Initialize note timing
     alarmStep = 0;
     currentAlarmCycle = 0;
     alarmCycleGap = 0;
     alarmFinishTime = 0;
 
-    // Play first tone immediately
-    tone(buzzerPin, TIMER_ALARM_MELODY[0], TIMER_ALARM_STEP_DURATION);
+    // Stop any existing tone and play first tone WITHOUT duration parameter
+    noTone(buzzerPin);
+    delay(10);
+    tone(buzzerPin, TIMER_ALARM_MELODY[0]);  // NO duration parameter!
   }
 
-  // Handle alarm progression - FIXED timing logic
+  // Handle alarm progression - FIXED timing logic similar to main alarm
   void handleAlarm() {
     unsigned long currentMillis = millis();
 
@@ -371,29 +375,36 @@ private:
         // Gap finished, start next cycle
         alarmCycleGap = 0;
         alarmStep = 0;
-        alarmStartTime = currentMillis;
-        tone(buzzerPin, TIMER_ALARM_MELODY[0], TIMER_ALARM_STEP_DURATION);
+        noteStartTime = currentMillis;
+
+        // Start new cycle
+        noTone(buzzerPin);
+        delay(5);
+        tone(buzzerPin, TIMER_ALARM_MELODY[0]);  // NO duration parameter!
       }
       return;
     }
 
-    // Check if it's time for next note
-    if (currentMillis - alarmStartTime >= (alarmStep + 1) * TIMER_ALARM_STEP_DURATION) {
+    // Check if current note duration has elapsed
+    if (currentMillis - noteStartTime >= TIMER_ALARM_STEP_DURATION) {
       alarmStep++;
 
       if (alarmStep < TIMER_ALARM_MELODY_LENGTH) {
         // Play next tone in melody
-        tone(buzzerPin, TIMER_ALARM_MELODY[alarmStep], TIMER_ALARM_STEP_DURATION);
+        noteStartTime = currentMillis;
+        noTone(buzzerPin);                               // Stop current tone
+        delay(5);                                        // Brief pause between notes
+        tone(buzzerPin, TIMER_ALARM_MELODY[alarmStep]);  // NO duration parameter!
       } else {
         // Melody finished
+        noTone(buzzerPin);
         currentAlarmCycle++;
 
         if (currentAlarmCycle < TIMER_ALARM_CYCLES) {
           // Start gap before next cycle
           alarmCycleGap = currentMillis;
-          noTone(buzzerPin);
         } else {
-          // All cycles finished
+          // All cycles finished, stop alarm
           alarmPlaying = false;
           alarmFinishTime = currentMillis;
           noTone(buzzerPin);
@@ -445,5 +456,3 @@ private:
     }
   }
 };
-
-#endif  // TIMER_H

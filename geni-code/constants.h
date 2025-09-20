@@ -1,5 +1,4 @@
-#ifndef CONSTANTS_H
-#define CONSTANTS_H
+#pragma once
 
 // Shift register control
 const byte SER = 10;
@@ -118,5 +117,3 @@ const String WIFI_LOCAL_IP_URL = "http://4.3.2.1";
 
 // AP info display switching
 const unsigned long AP_INFO_SWITCH_INTERVAL = 2000;  // 2 seconds
-
-#endif  // CONSTANTS_H

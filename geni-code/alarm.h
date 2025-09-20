@@ -1,5 +1,4 @@
-#ifndef ALARM_H
-#define ALARM_H
+#pragma once
 
 #include "HDSPDisplay.h"
 #include "constants.h"
@@ -23,8 +22,6 @@ private:
   byte alarmStep;
   byte currentAlarmCycle;
   unsigned long alarmCycleGap;
-  bool snoozed;
-  unsigned long snoozeStartTime;
   unsigned long noteStartTime;  // Track individual note timing
 
   // Setting display state
@@ -60,8 +57,6 @@ public:
     alarmStep = 0;
     currentAlarmCycle = 0;
     alarmCycleGap = 0;
-    snoozed = false;
-    snoozeStartTime = 0;
     noteStartTime = 0;
     showingSettingTitle = true;
     settingTitleStartTime = millis();
@@ -91,21 +86,12 @@ public:
 
     // Check if it's alarm time (trigger at 0 seconds)
     if (currentHour == alarmHours && currentMinute == alarmMinutes && currentSecond == 0) {
-      if (!snoozed) {
-        triggerAlarm();
-      } else {
-        // Check if snooze period is over
-        if (millis() - snoozeStartTime >= ALARM_SNOOZE_DURATION) {
-          snoozed = false;
-          triggerAlarm();
-        }
-      }
+      triggerAlarm();
     }
 
     // Reset alarm triggered flag at the start of a new day (00:00:00)
     if (currentHour == 0 && currentMinute == 0 && currentSecond == 0) {
       alarmTriggered = false;
-      snoozed = false;
     }
   }
 
@@ -141,7 +127,7 @@ public:
     settingTitleStartTime = millis();
   }
 
-  // Button handlers
+  // Button handlers - FIXED: Any button press stops the alarm
   void handleConfirmButton() {
     if (alarmPlaying) {
       // Stop alarm completely
@@ -156,7 +142,14 @@ public:
   }
 
   void handleAddButton() {
-    if (settingAlarm && !alarmPlaying && !showingSettingTitle) {
+    if (alarmPlaying) {
+      // Stop alarm completely
+      stopAlarm();
+      alarmTriggered = true;  // Prevent retriggering today
+      return;
+    }
+
+    if (settingAlarm && !showingSettingTitle) {
       if (currentSetting == 2) {
         // Enable/disable setting - ADD turns alarm ON
         alarmEnabled = true;
@@ -168,7 +161,14 @@ public:
   }
 
   void handleSubtractButton() {
-    if (settingAlarm && !alarmPlaying && !showingSettingTitle) {
+    if (alarmPlaying) {
+      // Stop alarm completely
+      stopAlarm();
+      alarmTriggered = true;  // Prevent retriggering today
+      return;
+    }
+
+    if (settingAlarm && !showingSettingTitle) {
       if (currentSetting == 2) {
         // Enable/disable setting - SUBTRACT turns alarm OFF
         alarmEnabled = false;
@@ -181,8 +181,9 @@ public:
 
   void handleCancelButton() {
     if (alarmPlaying) {
-      // Snooze the alarm
-      snoozeAlarm();
+      // Stop alarm completely
+      stopAlarm();
+      alarmTriggered = true;  // Prevent retriggering today
       return;
     }
 
@@ -316,7 +317,7 @@ private:
     }
   }
 
-  // FIXED: Trigger the alarm - DON'T specify duration in tone()
+  // Trigger the alarm
   void triggerAlarm() {
     alarmTriggered = true;
     alarmPlaying = true;
@@ -332,7 +333,7 @@ private:
     tone(buzzerPin, ALARM_MELODY[0]);  // NO duration parameter!
   }
 
-  // FIXED: Handle alarm sound progression with proper timing
+  // Handle alarm sound progression with proper timing
   void handleAlarmSound() {
     unsigned long currentMillis = millis();
 
@@ -385,15 +386,6 @@ private:
   // Stop the alarm completely
   void stopAlarm() {
     alarmPlaying = false;
-    snoozed = false;
-    noTone(buzzerPin);
-  }
-
-  // Snooze the alarm
-  void snoozeAlarm() {
-    alarmPlaying = false;
-    snoozed = true;
-    snoozeStartTime = millis();
     noTone(buzzerPin);
   }
 
@@ -432,13 +424,7 @@ private:
 
   // Update alarm display when ringing
   void updateAlarmDisplay() {
-    // Flash "WAKE UP!" message
-    if ((millis() / 400) % 2 == 0) {
-      display->displayText("WAKE UP!");
-    } else {
-      display->displayText("        ");
-    }
+    // Show "WAKE UP " continuously without flashing
+    display->displayText("WAKE UP ");
   }
 };
-
-#endif  // ALARM_H

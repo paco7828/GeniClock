@@ -1,5 +1,4 @@
-#ifndef GPS_H
-#define GPS_H
+#pragma once
 
 #include <TinyGPSPlus.h>
 #include <HardwareSerial.h>
@@ -303,5 +302,3 @@ public:
     return timeCache.valid ? timeCache.dayIndex : 0;
   }
 };
-
-#endif  // GPS_H
