@@ -197,8 +197,27 @@ public:
     timeCache.lastUpdate = 0;
   }
 
-  void begin(byte gpsRx) {
-    gpsSerial.begin(9600, SERIAL_8N1, gpsRx, -1);
+  void begin(byte gpsRx, byte gpsTx) {
+    gpsSerial.begin(9600, SERIAL_8N1, gpsRx, gpsTx);
+  }
+
+  // Change the GPS module's fix/output rate via a UBX CFG-RATE command.
+  // Needs gpsTx wired to the module's RX pin - RX-only wiring can't reach this.
+  // ms=1000 -> 1 Hz (normal), ms=200 -> 5 Hz (SPEED mode boost).
+  void setUpdateRate(uint16_t ms) {
+    uint8_t msg[] = {
+      0xB5, 0x62, 0x06, 0x08, 0x06, 0x00,
+      (uint8_t)(ms & 0xFF), (uint8_t)(ms >> 8),
+      0x01, 0x00, 0x01, 0x00, 0x00, 0x00
+    };
+    uint8_t ckA = 0, ckB = 0;
+    for (int i = 2; i < 12; i++) {
+      ckA += msg[i];
+      ckB += ckA;
+    }
+    msg[12] = ckA;
+    msg[13] = ckB;
+    gpsSerial.write(msg, 14);
   }
 
   void update() {
@@ -250,55 +269,5 @@ public:
     } else {
       year = month = day = dayIndex = hour = minute = second = 0;
     }
-  }
-
-  // Optimized getter functions - use cache instead of recalculating
-  int getYear() {
-    if (!isCacheValid()) {
-      updateTimeCache();
-    }
-    return timeCache.valid ? timeCache.year : 0;
-  }
-
-  byte getMonth() {
-    if (!isCacheValid()) {
-      updateTimeCache();
-    }
-    return timeCache.valid ? timeCache.month : 0;
-  }
-
-  byte getDay() {
-    if (!isCacheValid()) {
-      updateTimeCache();
-    }
-    return timeCache.valid ? timeCache.day : 0;
-  }
-
-  byte getHour() {
-    if (!isCacheValid()) {
-      updateTimeCache();
-    }
-    return timeCache.valid ? timeCache.hour : 0;
-  }
-
-  byte getMinute() {
-    if (!isCacheValid()) {
-      updateTimeCache();
-    }
-    return timeCache.valid ? timeCache.minute : 0;
-  }
-
-  byte getSecond() {
-    if (!isCacheValid()) {
-      updateTimeCache();
-    }
-    return timeCache.valid ? timeCache.second : 0;
-  }
-
-  byte getDayIndex() {
-    if (!isCacheValid()) {
-      updateTimeCache();
-    }
-    return timeCache.valid ? timeCache.dayIndex : 0;
   }
 };

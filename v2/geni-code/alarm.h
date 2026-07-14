@@ -20,7 +20,6 @@ private:
   bool alarmPlaying;
   unsigned long alarmStartTime;
   byte alarmStep;
-  byte currentAlarmCycle;
   unsigned long alarmCycleGap;
   unsigned long noteStartTime;  // Track individual note timing
 
@@ -55,7 +54,6 @@ public:
     alarmPlaying = false;
     alarmStartTime = 0;
     alarmStep = 0;
-    currentAlarmCycle = 0;
     alarmCycleGap = 0;
     noteStartTime = 0;
     showingSettingTitle = true;
@@ -204,17 +202,15 @@ public:
   }
 
   // Get current state for display purposes
-  bool isInSettingMode() const {
-    return settingAlarm;
-  }
-  bool isAlarmActive() const {
-    return alarmPlaying;
-  }
   bool shouldExitAlarmMode() const {
     return exitAlarmMode;
   }
   bool isAlarmEnabled() const {
     return alarmEnabled;
+  }
+
+  bool isAlarmActive() const {
+    return alarmPlaying;
   }
 
   // Reset exit flag (call from main code after handling exit)
@@ -324,61 +320,46 @@ private:
     alarmStartTime = millis();
     noteStartTime = millis();
     alarmStep = 0;
-    currentAlarmCycle = 0;
     alarmCycleGap = 0;
 
     // Stop any existing tone and play first tone WITHOUT duration parameter
     noTone(buzzerPin);
-    delay(10);                         // Small delay to ensure clean start
-    tone(buzzerPin, ALARM_MELODY[0]);  // NO duration parameter!
+    delay(10);                               // Small delay to ensure clean start
+    tone(buzzerPin, TIMER_ALARM_MELODY[0]);  // NO duration parameter!
   }
 
-  // Handle alarm sound progression with proper timing
+  // Handle alarm sound progression - loops forever (gap between melody passes)
   void handleAlarmSound() {
     unsigned long currentMillis = millis();
 
-    // Handle gap between cycles
+    // Handle gap between melody repeats
     if (alarmCycleGap > 0) {
-      if (currentMillis - alarmCycleGap >= ALARM_CYCLE_GAP_DURATION) {
-        // Gap finished, start next cycle
+      if (currentMillis - alarmCycleGap >= TIMER_ALARM_CYCLE_GAP_DURATION) {
         alarmCycleGap = 0;
         alarmStep = 0;
         noteStartTime = currentMillis;
 
-        // Start new cycle
         noTone(buzzerPin);
         delay(5);
-        tone(buzzerPin, ALARM_MELODY[0]);  // NO duration parameter!
+        tone(buzzerPin, TIMER_ALARM_MELODY[0]);
       }
       return;
     }
 
     // Check if current note duration has elapsed
-    if (currentMillis - noteStartTime >= ALARM_STEP_DURATION) {
+    if (currentMillis - noteStartTime >= TIMER_ALARM_STEP_DURATION) {
       alarmStep++;
 
-      if (alarmStep < ALARM_MELODY_LENGTH) {
+      if (alarmStep < TIMER_ALARM_MELODY_LENGTH) {
         // Play next tone in melody
         noteStartTime = currentMillis;
-        noTone(buzzerPin);                         // Stop current tone
-        delay(5);                                  // Brief pause between notes
-        tone(buzzerPin, ALARM_MELODY[alarmStep]);  // NO duration parameter!
-      } else {
-        // Melody finished
         noTone(buzzerPin);
-        currentAlarmCycle++;
-
-        if (currentAlarmCycle < ALARM_CYCLES) {
-          // Start gap before next cycle
-          alarmCycleGap = currentMillis;
-        } else {
-          // All cycles finished, restart from beginning
-          currentAlarmCycle = 0;
-          alarmStep = 0;
-          noteStartTime = currentMillis;
-          delay(5);
-          tone(buzzerPin, ALARM_MELODY[0]);  // NO duration parameter!
-        }
+        delay(5);
+        tone(buzzerPin, TIMER_ALARM_MELODY[alarmStep]);
+      } else {
+        // Melody finished - brief gap, then repeat (forever, until stopped)
+        noTone(buzzerPin);
+        alarmCycleGap = currentMillis;
       }
     }
   }

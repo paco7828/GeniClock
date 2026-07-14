@@ -151,10 +151,6 @@ public:
     clockType = type;
   }
 
-  uint8_t getClockType() const {
-    return clockType;
-  }
-
   void begin() {
     Wire.beginTransmission(mcpAddr);
     Wire.write(MCP_IODIRA);
@@ -230,48 +226,39 @@ public:
     }
   }
 
-  void displayTime(byte hour, byte minute, byte second) {
+  void displayTime(byte hour, byte minute, byte second, bool reversed = false) {
     char buffer[9];
-    sprintf(buffer, "%02d:%02d:%02d", hour, minute, second);
+    if (reversed) sprintf(buffer, "%02d:%02d:%02d", second, minute, hour);
+    else sprintf(buffer, "%02d:%02d:%02d", hour, minute, second);
     displayText(buffer);
   }
 
-  void displayYearMonth(int year, byte month) {
+  void displayYearMonth(int year, byte month, bool reversed = false) {
     char buffer[9];
-    sprintf(buffer, "%d. %02d", year, month);
+    if (reversed) sprintf(buffer, "%02d. %d", month, year);
+    else sprintf(buffer, "%d. %02d", year, month);
     displayText(buffer);
   }
 
-  void displayDayAndName(byte day, byte dayIndex) {
+  void displayDayAndName(byte day, byte dayIndex, bool reversed = false) {
     char buffer[9];
-    sprintf(buffer, " %02d %s ", day, DAYS_OF_WEEK[dayIndex]);
+    if (reversed) sprintf(buffer, " %s %02d ", DAYS_OF_WEEK[dayIndex], day);
+    else sprintf(buffer, " %02d %s ", day, DAYS_OF_WEEK[dayIndex]);
     displayText(buffer);
   }
 
-  void displayTemperature(float temperature) {
+  void displayTemperature(float temperature, bool fahrenheit = false) {
     char buffer[16];
-    if (temperature >= 100.0 || temperature <= -100.0)
-      sprintf(buffer, " %03.0f C ", abs((int)temperature));
-    else if (temperature >= 10.0 || temperature <= -10.0)
-      sprintf(buffer, " %04.1f C ", abs(temperature));
-    else if (temperature >= 0.0)
-      sprintf(buffer, " %04.2f C ", temperature);
+    float t = fahrenheit ? (temperature * 9.0f / 5.0f + 32.0f) : temperature;
+    char unit = fahrenheit ? 'F' : 'C';
+    if (t >= 100.0 || t <= -100.0)
+      sprintf(buffer, " %03.0f %c ", abs((int)t), unit);
+    else if (t >= 10.0 || t <= -10.0)
+      sprintf(buffer, " %04.1f %c ", abs(t), unit);
+    else if (t >= 0.0)
+      sprintf(buffer, " %04.2f %c ", t, unit);
     else
-      sprintf(buffer, " -%03.1f C ", abs(temperature));
-    displayText(buffer);
-  }
-
-  void displayGPSLatitude(double latitude) {
-    char buffer[9];
-    if (latitude >= 0) sprintf(buffer, "%8.5f", latitude);
-    else sprintf(buffer, "%8.4f", latitude);
-    displayText(buffer);
-  }
-
-  void displayGPSLongitude(double longitude) {
-    char buffer[9];
-    if (longitude >= 0) sprintf(buffer, "%8.5f", longitude);
-    else sprintf(buffer, "%8.4f", longitude);
+      sprintf(buffer, " -%03.1f %c ", abs(t), unit);
     displayText(buffer);
   }
 

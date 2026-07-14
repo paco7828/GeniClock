@@ -23,7 +23,6 @@ private:
   bool alarmPlaying;
   unsigned long alarmStartTime;
   byte alarmStep;
-  byte currentAlarmCycle;
   unsigned long alarmCycleGap;
   unsigned long noteStartTime;  // Track individual note timing
 
@@ -35,9 +34,6 @@ private:
   unsigned long lastCancelPress;
   byte cancelPressCount;
   bool cancelSingleProcessed;
-
-  // Auto return to main mode after alarm
-  unsigned long alarmFinishTime;
 
   // Reference to external components
   HDSPDisplay* display;
@@ -61,7 +57,6 @@ public:
     alarmPlaying = false;
     alarmStartTime = 0;
     alarmStep = 0;
-    currentAlarmCycle = 0;
     alarmCycleGap = 0;
     noteStartTime = 0;  // Initialize note timing
     showingSettingTitle = true;
@@ -69,7 +64,6 @@ public:
     cancelPressCount = 0;
     lastCancelPress = 0;
     cancelSingleProcessed = false;
-    alarmFinishTime = 0;
     exitTimerMode = false;
   }
 
@@ -88,12 +82,6 @@ public:
     // Handle setting title timeout
     if (showingSettingTitle && (millis() - settingTitleStartTime >= TIMER_SETTING_TITLE_DURATION)) {
       showingSettingTitle = false;
-    }
-
-    // Handle auto-return after alarm finishes
-    if (timerFinished && !alarmPlaying && alarmFinishTime > 0 && (millis() - alarmFinishTime >= TIMER_AUTO_RETURN_DELAY)) {
-      exitTimerMode = true;
-      return;
     }
 
     if (alarmPlaying) {
@@ -134,12 +122,22 @@ public:
   }
 
   void handleAddButton() {
+    if (alarmPlaying || timerFinished) {
+      stopAlarm();
+      reset();
+      return;
+    }
     if (settingTimer && !alarmPlaying && !showingSettingTitle) {
       handleAdd();
     }
   }
 
   void handleSubtractButton() {
+    if (alarmPlaying || timerFinished) {
+      stopAlarm();
+      reset();
+      return;
+    }
     if (settingTimer && !alarmPlaying && !showingSettingTitle) {
       handleSubtract();
     }
@@ -170,15 +168,6 @@ public:
   }
 
   // Get current state for display purposes
-  bool isInSettingMode() const {
-    return settingTimer;
-  }
-  bool isRunning() const {
-    return startedTimer;
-  }
-  bool isAlarmActive() const {
-    return alarmPlaying;
-  }
   bool shouldExitTimerMode() const {
     return exitTimerMode;
   }
@@ -349,15 +338,13 @@ private:
     }
   }
 
-  // Start the timer alarm - FIXED initialization
+  // Start the timer alarm - loops until stopped by any joystick interaction
   void startAlarm() {
     alarmPlaying = true;
     alarmStartTime = millis();
     noteStartTime = millis();  // Initialize note timing
     alarmStep = 0;
-    currentAlarmCycle = 0;
     alarmCycleGap = 0;
-    alarmFinishTime = 0;
 
     // Stop any existing tone and play first tone WITHOUT duration parameter
     noTone(buzzerPin);
@@ -365,22 +352,21 @@ private:
     tone(buzzerPin, TIMER_ALARM_MELODY[0]);  // NO duration parameter!
   }
 
-  // Handle alarm progression - FIXED timing logic similar to main alarm
+  // Handle alarm progression - loops the melody forever (gap between passes)
+  // until the user interacts; there's no cycle limit / auto-stop anymore.
   void handleAlarm() {
     unsigned long currentMillis = millis();
 
-    // Handle gap between cycles
+    // Handle gap between melody repeats
     if (alarmCycleGap > 0) {
       if (currentMillis - alarmCycleGap >= TIMER_ALARM_CYCLE_GAP_DURATION) {
-        // Gap finished, start next cycle
         alarmCycleGap = 0;
         alarmStep = 0;
         noteStartTime = currentMillis;
 
-        // Start new cycle
         noTone(buzzerPin);
         delay(5);
-        tone(buzzerPin, TIMER_ALARM_MELODY[0]);  // NO duration parameter!
+        tone(buzzerPin, TIMER_ALARM_MELODY[0]);
       }
       return;
     }
@@ -392,23 +378,13 @@ private:
       if (alarmStep < TIMER_ALARM_MELODY_LENGTH) {
         // Play next tone in melody
         noteStartTime = currentMillis;
-        noTone(buzzerPin);                               // Stop current tone
-        delay(5);                                        // Brief pause between notes
-        tone(buzzerPin, TIMER_ALARM_MELODY[alarmStep]);  // NO duration parameter!
-      } else {
-        // Melody finished
         noTone(buzzerPin);
-        currentAlarmCycle++;
-
-        if (currentAlarmCycle < TIMER_ALARM_CYCLES) {
-          // Start gap before next cycle
-          alarmCycleGap = currentMillis;
-        } else {
-          // All cycles finished, stop alarm
-          alarmPlaying = false;
-          alarmFinishTime = currentMillis;
-          noTone(buzzerPin);
-        }
+        delay(5);
+        tone(buzzerPin, TIMER_ALARM_MELODY[alarmStep]);
+      } else {
+        // Melody finished - brief gap, then repeat (forever, until stopped)
+        noTone(buzzerPin);
+        alarmCycleGap = currentMillis;
       }
     }
   }
@@ -417,7 +393,6 @@ private:
   void stopAlarm() {
     alarmPlaying = false;
     timerFinished = false;
-    alarmFinishTime = 0;
     noTone(buzzerPin);
   }
 

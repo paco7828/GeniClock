@@ -1,13 +1,12 @@
 #include "constants.h"
 #include "HDSPDisplay.h"
 #include "gps.h"
-#include "ntp.h"
-#include "wifimanager.h"
 #include <Wire.h>
 #include <RTClib.h>
 #include <Preferences.h>
 #include "timer.h"
 #include "alarm.h"
+#include "settime.h"
 #include "Better-JoyStick.h"
 
 // Joystick
@@ -15,11 +14,12 @@ BetterJoystick joystick;
 
 // Joystick állapot (debounce + edge detect)
 byte lastJsDirection = 0;
-bool lastJsButton = false;
 unsigned long lastJsDebounceTime = 0;
+bool jsDirFired = false;
 unsigned long lastJsBtnDebounceTime = 0;
 bool jsButtonState = false;
 bool lastJsButtonState = false;
+
 // Triple press (confirm = JS gomb)
 unsigned long firstConfirmPress = 0;
 byte confirmPressCount = 0;
@@ -45,10 +45,17 @@ byte currentMode = 0;  // Start with HH:MM:SS mode
 3 -> temperature
 4 -> timer
 5 -> alarm
-6 -> GPS latitude
-7 -> GPS longitude
-8 -> GPS speed
+6 -> GPS speed
 */
+
+// Per-mode display format toggles (JS button click while browsing, modes 0-3)
+bool timeDisplayReversed = false;  // mode 0: HH:MM:SS <-> SS:MM:HH
+bool dateDisplayReversed = false;  // mode 1: YYYY. MM <-> MM. YYYY
+bool dayDisplayReversed = false;   // mode 2: DD Www   <-> Www DD
+bool tempFahrenheit = false;       // mode 3: Celsius  <-> Fahrenheit
+
+// GPS init deferred out of setup() - see gpsInitPending in setup()/loop()
+bool gpsInitPending = false;
 
 // Mode title display state
 bool showingModeTitle = false;
@@ -56,20 +63,16 @@ unsigned long modeTitleStartTime = 0;
 
 // Time source status flags
 bool gpsAvailable = false;
-bool ntpAvailable = false;
 bool rtcAvailable = false;
-bool wifiConnected = false;
-bool wifiConnecting = false;
 
 // Status message variables
 bool showingStatusMessage = false;
 unsigned long statusMessageStart = 0;
 
-// Timing for connection attempts
-unsigned long lastNtpAttempt = 0;
+// Timing for RTC / GPS sync
+unsigned long lastGpsRtcSync = 0;
 unsigned long lastRtcRead = 0;
 unsigned long lastDisplayUpdate = 0;
-unsigned long wifiConnectionStart = 0;
 
 // Temperature reading variables
 unsigned long lastTemperatureRead = 0;
@@ -90,24 +93,14 @@ bool playingStartupSound = false;
 unsigned long startupSoundStartTime = 0;
 byte startupSoundStep = 0;
 
-// WiFi setup mode variables
-bool inWiFiSetupMode = false;
-bool wifiCredentialsAvailable = false;
-bool showingAPInfo = false;
-unsigned long lastAPInfoSwitch = 0;
-byte apInfoMode = 0;  // 0=AP name, 1="PASSWORD", 2=actual password
+// Manual time set mode (triggered by triple UP-press)
+bool inSetTimeMode = false;
 
 // Display
 HDSPDisplay HDSP;  // default 0x20
 
 // GPS
 GPS gps;
-
-// NTP (will be initialized later with stored credentials)
-NTP ntp;
-
-// WiFi Manager
-WiFiManager wifiManager;
 
 // RTC
 RTC_DS3231 rtc;
@@ -120,6 +113,9 @@ Timer timer(&HDSP, BUZZER);
 
 // Alarm - RENAMED from 'alarm' to 'alarmClock' to avoid conflict with system alarm() function
 Alarm alarmClock(&HDSP, BUZZER, &preferences);
+
+// Manual time set (writes into the DS3231 - no GPS wiring required)
+SetTime setTime(&HDSP, BUZZER);
 
 void setup() {
   // Initialize preferences
@@ -146,10 +142,9 @@ void setup() {
 
   // Buzzer
   pinMode(BUZZER, OUTPUT);
-  tone(BUZZER, 3000, 200);
 
   // GPS
-  gps.begin(GPS_RX);
+  gpsInitPending = true;
 
   if (rtc.begin()) {
     rtcAvailable = true;
@@ -171,80 +166,45 @@ void setup() {
   }
   // RTC FAIL will be shown after startup sequence
 
-  // Initialize WiFi Manager
-  wifiManager.begin();
+  // Start startup sound and display sequence
+  playingStartupSound = true;
+  startupSoundStartTime = millis();
+  startupSoundStep = 0;
 
-  // Check if WiFi credentials are stored
-  if (wifiManager.hasStoredCredentials()) {
-    wifiCredentialsAvailable = true;
-
-    // Initialize NTP with stored credentials
-    String ssid, password;
-    wifiManager.getStoredCredentials(ssid, password);
-    ntp.setCredentials(ssid.c_str(), password.c_str());
-  } else {
-    inWiFiSetupMode = true;
-    showingAPInfo = true;
-    lastAPInfoSwitch = millis();
-    apInfoMode = 0;
-
-    // Start AP with captive portal
-    wifiManager.startAP();
-
-    // Show setup message after GENI
-    delay(2000);
-    // AP info will be handled in the main loop
-  }
-
-  // Start startup sound and display sequence only if not in WiFi setup mode
-  if (!inWiFiSetupMode) {
-    playingStartupSound = true;
-    startupSoundStartTime = millis();
-    startupSoundStep = 0;
-
-    // GENI is already shown, play first startup tone
-    tone(BUZZER, STARTUP_MELODY[0], STARTUP_NOTE_DURATIONS[0]);
-  }
+  // GENI is already shown, play first startup tone
+  tone(BUZZER, STARTUP_MELODY[0], STARTUP_NOTE_DURATIONS[0]);
 
   // Initialize display update timer
   lastDisplayUpdate = millis();
 }
 
 void loop() {
-  // Handle WiFi setup mode with captive portal
-  if (inWiFiSetupMode) {
-    wifiManager.handleClient();
+  if (!playingStartupSound && alarmClock.isAlarmActive()) {
+    alarmClock.update();
+  }
 
-    // Handle AP info display switching
-    handleAPInfoDisplay();
+  // Handle manual time-set mode (entered via triple UP-press, see handleJoystick())
+  if (inSetTimeMode) {
+    handleSetTimeJoystick();
+    setTime.update();
 
-    // Check if credentials were saved via captive portal
-    if (wifiManager.credentialsUpdated()) {
-      // Get the new credentials
-      String ssid, password;
-      wifiManager.getStoredCredentials(ssid, password);
+    if (setTime.shouldExitSetTimeMode()) {
+      bool commit = setTime.shouldCommitTime();
+      int newYear = setTime.getYear();
+      byte newMonth = setTime.getMonth();
+      byte newDay = setTime.getDay();
+      byte newHour = setTime.getHour();
+      byte newMinute = setTime.getMinute();
 
-      // Initialize NTP with new credentials
-      ntp.setCredentials(ssid.c_str(), password.c_str());
+      setTime.clearExitFlag();
+      inSetTimeMode = false;
+      startModeSwitch(0);
 
-      // Exit setup mode
-      inWiFiSetupMode = false;
-      wifiCredentialsAvailable = true;
-      showingAPInfo = false;
-      wifiManager.stopAP();
-
-      showStatusMessage("WIFI SET");
-
-      // Start startup sequence
-      playingStartupSound = true;
-      startupSoundStartTime = millis();
-      startupSoundStep = 0;
-
-      // Show startup message
-      HDSP.displayText("- GENI -");
-
-      // Play first startup tone
-      tone(BUZZER, STARTUP_MELODY[0], STARTUP_NOTE_DURATIONS[0]);
+      if (commit && rtcAvailable) {
+        rtc.adjust(DateTime(newYear, newMonth, newDay, newHour, newMinute, 0));
+        lastRtcRead = 0;  // force an immediate re-read so the display reflects it right away
+        showStatusMessage("TIME SET");
+      }
     }
     return;
   }
@@ -259,6 +219,12 @@ void loop() {
   if (playingStartupSound) {
     handleStartupSound();
     return;  // Don't do anything else during startup sound
+  }
+
+  // GPS init deferred here so a bad GPS_TX/GPS_RX config can't block the boot melody
+  if (gpsInitPending) {
+    gpsInitPending = false;
+    gps.begin(GPS_RX, GPS_TX);
   }
 
   handleJoystick();
@@ -279,10 +245,8 @@ void loop() {
     return;
   }
 
-  // Update time source (only if WiFi credentials are available)
-  if (wifiCredentialsAvailable) {
-    updateTimeSource();
-  }
+  // Update time source (GPS resyncs the RTC periodically; RTC drives the display)
+  updateTimeSource();
 
   // Update temperature reading (only when in temperature mode)
   if (currentMode == 3) {
@@ -313,7 +277,6 @@ void loop() {
 
     // Set appropriate update interval for selected mode
     switch (currentMode) {
-      case 0: displayUpdateInterval = 500; break;   // time updates every 500ms
       case 1: displayUpdateInterval = 1000; break;  // year+month updates every 1s
       case 2: displayUpdateInterval = 1000; break;  // day+name updates every 1s
       case 3: displayUpdateInterval = 2000; break;  // temperature updates every 2s
@@ -323,9 +286,7 @@ void loop() {
       case 5:
         // Alarm mode - handle separately, no need to set interval
         break;
-      case 6: displayUpdateInterval = 2000; break;  // GPS lat updates every 2s
-      case 7: displayUpdateInterval = 2000; break;  // GPS lon updates every 2s
-      case 8: displayUpdateInterval = 1000; break;  // GPS speed updates every 1s
+      case 6: displayUpdateInterval = 200; break;  // GPS speed updates every 200ms
     }
 
     // Force immediate display update by setting lastDisplayUpdate to 0
@@ -336,60 +297,6 @@ void loop() {
   if (!showingModeTitle && !playingHourNotification) {
     // In normal mode - update display based on current mode
     updateTDDisplay();
-  }
-}
-
-void handleAPInfoDisplay() {
-  if (!showingAPInfo) return;
-
-  // Check if it's time to switch display
-  if (millis() - lastAPInfoSwitch >= AP_INFO_SWITCH_INTERVAL) {
-    lastAPInfoSwitch = millis();
-
-    // Check if someone has connected to the AP
-    if (wifiManager.hasConnectedClients()) {
-      // Show a message indicating captive portal is active
-      switch (apInfoMode) {
-        case 0:
-          HDSP.displayText("CAPTIVE ");
-          apInfoMode = 1;
-          break;
-        case 1:
-          HDSP.displayText("PORTAL  ");
-          apInfoMode = 2;
-          break;
-        case 2:
-          HDSP.displayText("ACTIVE  ");
-          apInfoMode = 0;
-          break;
-      }
-    } else {
-      // Show AP credentials in 3-step cycle
-      switch (apInfoMode) {
-        case 0:
-          {
-            String apText = "AP:" + String(AP_SSID);
-            char apBuffer[9];
-            apText.toCharArray(apBuffer, 9);
-            HDSP.displayText(apBuffer);
-            apInfoMode = 1;
-          }
-          break;
-        case 1:
-          HDSP.displayText("PASSWORD");
-          apInfoMode = 2;
-          break;
-        case 2:
-          {
-            String pwText = String(AP_PASSWORD);
-            char pwBuffer[9];
-            pwText.toCharArray(pwBuffer, 9);
-            HDSP.displayText(pwBuffer);
-            apInfoMode = 0;
-          }
-          break;
-      }
-    }
   }
 }
 
@@ -480,24 +387,26 @@ void showStatusMessage(const char *message) {
 }
 
 void startModeSwitch(byte newMode) {
-  // Ensure the new mode is within valid range
   if (newMode > MAX_MODE) newMode = MIN_MODE;
+
+  if (newMode == 6 && currentMode != 6) {
+    gps.setUpdateRate(GPS_RATE_HIGH_MS);
+  } else if (newMode != 6 && currentMode == 6) {
+    gps.setUpdateRate(GPS_RATE_NORMAL_MS);
+  }
 
   currentMode = newMode;
   showingModeTitle = true;
   modeTitleStartTime = millis();
 
-  // Reset timer when entering timer mode
   if (newMode == 4) {
     timer.reset();
   }
 
-  // Reset alarm when entering alarm mode
   if (newMode == 5) {
     alarmClock.reset();
   }
 
-  // Show the title of the new mode
   HDSP.displayText(MODE_TITLES[currentMode]);
 }
 
@@ -508,92 +417,112 @@ void playButtonBeep(byte buttonIndex) {
 void handleJoystick() {
   unsigned long now = millis();
 
-  // --- Irány (mode váltás / add / subtract) ---
+  if (alarmClock.isAlarmActive()) {
+    byte dir = joystick.getDirection();
+    bool btnRaw = joystick.getButtonPress();
+    if ((dir != 0 || btnRaw) && (now - lastJsDebounceTime >= DEBOUNCE_DELAY)) {
+      lastJsDebounceTime = now;
+      alarmClock.handleConfirmButton();
+    }
+    lastJsDirection = dir;
+    jsButtonState = btnRaw;
+    lastJsButtonState = btnRaw;
+    return;
+  }
+
+  // A joystick VRX/VRY bekötése fizikailag fel-le/balra-jobbra van cserélve a
+  // getDirection() elnevezéséhez képest: fizikai JOBBRA -> dir==4 (kód "UP"),
+  // fizikai FEL -> dir==2 (kód "RIGHT"), fizikai BALRA -> dir==3 (kód "DOWN"),
+  // fizikai LE -> dir==1 (kód "LEFT"). A kommentek ezért a FIZIKAI irányt írják,
+  // a dir==N csak a getDirection() belső számozása.
   byte dir = joystick.getDirection();
   if (dir != lastJsDirection) {
     lastJsDebounceTime = now;
     lastJsDirection = dir;
+    jsDirFired = false;
   }
-  if (dir != 0 && (now - lastJsDebounceTime) > DEBOUNCE_DELAY) {
-    // Csak az első stabil irányra reagálunk, addig nem ismételünk
-    // (ha hold-repeat kell, azt külön lehet hozzáadni)
-    lastJsDebounceTime = now + 300;  // 300ms auto-repeat gát
+  if (dir != 0) {
+    unsigned long requiredWait = jsDirFired ? JOYSTICK_REPEAT_INTERVAL : DEBOUNCE_DELAY;
+    if (now - lastJsDebounceTime >= requiredWait) {
+      lastJsDebounceTime = now;
+      jsDirFired = true;
 
-    if (dir == 2) {  // RIGHT → ADD / mode forward
-      playButtonBeep(2);
-      if (currentMode == 4 && !showingModeTitle) {
-        timer.handleAddButton();
-        return;
-      }
-      if (currentMode == 5 && !showingModeTitle) {
-        alarmClock.handleAddButton();
-        return;
-      }
-      byte newMode = (currentMode + 1 > MAX_MODE) ? MIN_MODE : currentMode + 1;
-      startModeSwitch(newMode);
-    } else if (dir == 1) {  // LEFT → SUBTRACT / mode backward
-      playButtonBeep(3);
-      if (currentMode == 4 && !showingModeTitle) {
-        timer.handleSubtractButton();
-        return;
-      }
-      if (currentMode == 5 && !showingModeTitle) {
-        alarmClock.handleSubtractButton();
-        return;
-      }
-      byte newMode = (currentMode == MIN_MODE) ? MAX_MODE : currentMode - 1;
-      startModeSwitch(newMode);
-    } else if (dir == 4) {  // UP → CONFIRM (timer/alarm confirm)
-      if (currentMode == 4 && !showingModeTitle) {
-        timer.handleConfirmButton();
-        return;
-      }
-      if (currentMode == 5 && !showingModeTitle) {
-        alarmClock.handleConfirmButton();
-        return;
-      }
-      // Triple press → WiFi setup (UP 3x)
-      if (now - firstConfirmPress <= TRIPLE_PRESS_WINDOW) {
-        confirmPressCount++;
-        if (confirmPressCount >= 3) {
-          inWiFiSetupMode = true;
-          showingAPInfo = true;
-          lastAPInfoSwitch = now;
-          apInfoMode = 0;
-          wifiManager.startAP();
-          showStatusMessage("AP MODE ");
-          confirmPressCount = 0;
-          firstConfirmPress = 0;
+      if (dir == 4) {  // fizikai JOBBRA → CONFIRM (timer/alarm) / mode forward (böngészés)
+        if (currentMode == 4 && !showingModeTitle) {
+          timer.handleConfirmButton();
+          return;
         }
-      } else {
-        confirmPressCount = 1;
-        firstConfirmPress = now;
-      }
-    } else if (dir == 3) {  // DOWN → CANCEL
-      playButtonBeep(1);
-      if (currentMode == 4 && !showingModeTitle) {
-        timer.handleCancelButton();
-        if (timer.shouldExitTimerMode()) {
-          timer.clearExitFlag();
-          currentMode = 0;
-          startModeSwitch(0);
+        if (currentMode == 5 && !showingModeTitle) {
+          alarmClock.handleConfirmButton();
+          return;
         }
-        return;
-      }
-      if (currentMode == 5 && !showingModeTitle) {
-        alarmClock.handleCancelButton();
-        if (alarmClock.shouldExitAlarmMode()) {
-          alarmClock.clearExitFlag();
-          currentMode = 0;
-          startModeSwitch(0);
+        playButtonBeep(2);
+        byte newMode = (currentMode + 1 > MAX_MODE) ? MIN_MODE : currentMode + 1;
+        startModeSwitch(newMode);
+      } else if (dir == 3) {  // fizikai BALRA → CANCEL (timer/alarm) / mode backward (böngészés)
+        playButtonBeep(1);
+        if (currentMode == 4 && !showingModeTitle) {
+          timer.handleCancelButton();
+          if (timer.shouldExitTimerMode()) {
+            timer.clearExitFlag();
+            currentMode = 0;
+            startModeSwitch(0);
+          }
+          return;
         }
-        return;
-      }
-      hourNotificationEnabled = !hourNotificationEnabled;
-      showStatusMessage(hourNotificationEnabled ? "BEEP ON " : "BEEP OFF");
-      if (!hourNotificationEnabled && playingHourNotification) {
-        playingHourNotification = false;
-        noTone(BUZZER);
+        if (currentMode == 5 && !showingModeTitle) {
+          alarmClock.handleCancelButton();
+          if (alarmClock.shouldExitAlarmMode()) {
+            alarmClock.clearExitFlag();
+            currentMode = 0;
+            startModeSwitch(0);
+          }
+          return;
+        }
+        byte newMode = (currentMode == MIN_MODE) ? MAX_MODE : currentMode - 1;
+        startModeSwitch(newMode);
+      } else if (dir == 2) {  // fizikai FEL → ADD (timer/alarm) / hármas nyomás (SetTime belépő)
+        if (currentMode == 4 && !showingModeTitle) {
+          playButtonBeep(2);
+          timer.handleAddButton();
+          return;
+        }
+        if (currentMode == 5 && !showingModeTitle) {
+          playButtonBeep(2);
+          alarmClock.handleAddButton();
+          return;
+        }
+        // Triple press → manual time set (FEL 3x) - szándékosan néma, hogy a
+        // számolgatás közben ne csippanjon minden egyes próbálkozásnál
+        if (now - firstConfirmPress <= TRIPLE_PRESS_WINDOW) {
+          confirmPressCount++;
+          if (confirmPressCount >= 3) {
+            enterSetTimeMode();
+            confirmPressCount = 0;
+            firstConfirmPress = 0;
+          }
+        } else {
+          confirmPressCount = 1;
+          firstConfirmPress = now;
+        }
+      } else if (dir == 1) {  // fizikai LE → SUBTRACT (timer/alarm) / óránkénti csengetés ki/be
+        if (currentMode == 4 && !showingModeTitle) {
+          playButtonBeep(3);
+          timer.handleSubtractButton();
+          return;
+        }
+        if (currentMode == 5 && !showingModeTitle) {
+          playButtonBeep(3);
+          alarmClock.handleSubtractButton();
+          return;
+        }
+        playButtonBeep(3);
+        hourNotificationEnabled = !hourNotificationEnabled;
+        showStatusMessage(hourNotificationEnabled ? "CHM ON" : "CHM OFF");
+        if (!hourNotificationEnabled && playingHourNotification) {
+          playingHourNotification = false;
+          noTone(BUZZER);
+        }
       }
     }
   }
@@ -604,13 +533,24 @@ void handleJoystick() {
   if ((now - lastJsBtnDebounceTime) > DEBOUNCE_DELAY) {
     if (btnRaw != jsButtonState) {
       jsButtonState = btnRaw;
-      if (jsButtonState) {  // press event (LOW = pressed, getButtonPress() returns true)
+      if (jsButtonState) {
         playButtonBeep(0);
-        // Gomb = CONFIRM funkció (timer start/stop, alarm confirm)
         if (currentMode == 4 && !showingModeTitle) {
           timer.handleConfirmButton();
         } else if (currentMode == 5 && !showingModeTitle) {
           alarmClock.handleConfirmButton();
+        } else if (currentMode == 0) {
+          timeDisplayReversed = !timeDisplayReversed;
+          lastDisplayUpdate = 0;
+        } else if (currentMode == 1) {
+          dateDisplayReversed = !dateDisplayReversed;
+          lastDisplayUpdate = 0;
+        } else if (currentMode == 2) {
+          dayDisplayReversed = !dayDisplayReversed;
+          lastDisplayUpdate = 0;
+        } else if (currentMode == 3) {
+          tempFahrenheit = !tempFahrenheit;
+          lastDisplayUpdate = 0;
         }
       }
     }
@@ -618,10 +558,60 @@ void handleJoystick() {
   lastJsButtonState = btnRaw;
 }
 
-void updateTimeSource() {
-  bool timeUpdated = false;
+void enterSetTimeMode() {
+  inSetTimeMode = true;
+  setTime.reset(currentTime.year, currentTime.month, currentTime.day, currentTime.hour, currentTime.minute);
+}
 
-  // Always check GPS first (highest priority)
+// Same debounce pattern as handleJoystick(), routed to the SetTime instance instead of mode/timer/alarm
+void handleSetTimeJoystick() {
+  unsigned long now = millis();
+
+  byte dir = joystick.getDirection();
+  if (dir != lastJsDirection) {
+    lastJsDebounceTime = now;
+    lastJsDirection = dir;
+    jsDirFired = false;
+  }
+  if (dir != 0) {
+    unsigned long requiredWait = jsDirFired ? JOYSTICK_REPEAT_INTERVAL : DEBOUNCE_DELAY;
+    if (now - lastJsDebounceTime >= requiredWait) {
+      lastJsDebounceTime = now;
+      jsDirFired = true;
+
+      if (dir == 4) {  // fizikai JOBBRA → CONFIRM
+        playButtonBeep(0);
+        setTime.handleConfirmButton();
+      } else if (dir == 3) {  // fizikai BALRA → CANCEL (egyszer = mező reset, duplán = megszakít)
+        playButtonBeep(1);
+        setTime.handleCancelButton();
+      } else if (dir == 2) {  // fizikai FEL → ADD
+        playButtonBeep(2);
+        setTime.handleAddButton();
+      } else if (dir == 1) {  // fizikai LE → SUBTRACT
+        playButtonBeep(3);
+        setTime.handleSubtractButton();
+      }
+    }
+  }
+
+  // JS button (SW) - also CONFIRM
+  bool btnRaw = joystick.getButtonPress();
+  if (btnRaw != lastJsButtonState) lastJsBtnDebounceTime = now;
+  if ((now - lastJsBtnDebounceTime) > DEBOUNCE_DELAY) {
+    if (btnRaw != jsButtonState) {
+      jsButtonState = btnRaw;
+      if (jsButtonState) {
+        playButtonBeep(0);
+        setTime.handleConfirmButton();
+      }
+    }
+  }
+  lastJsButtonState = btnRaw;
+}
+
+void updateTimeSource() {
+  // Feed the NMEA parser (non-blocking - no-op if GPS isn't wired in at all)
   gps.update();
 
   if (gps.hasFix()) {
@@ -630,106 +620,35 @@ void updateTimeSource() {
       showStatusMessage(" GPS OK ");
     }
 
-    // Temporary variables
-    int year, month, day, dayIndex, hour, minute, second;
+    // Periodically resync the RTC from GPS. If GPS is never wired in, hasFix()
+    // just stays false forever and this block never runs - the RTC (or a
+    // manual time set) is then the only time source, as intended.
+    if (rtcAvailable && (lastGpsRtcSync == 0 || millis() - lastGpsRtcSync >= GPS_RTC_SYNC_INTERVAL)) {
+      int year, month, day, dayIndex, hour, minute, second;
+      gps.getHungarianTime(year, month, day, dayIndex, hour, minute, second);
 
-    // Retrieve GPS time
-    gps.getHungarianTime(year, month, day, dayIndex, hour, minute, second);
-
-    // Insert into structure
-    currentTime.year = year;
-    currentTime.month = month;
-    currentTime.day = day;
-    currentTime.dayIndex = dayIndex;
-    currentTime.hour = hour;
-    currentTime.minute = minute;
-    currentTime.second = second;
-
-    timeUpdated = true;
-
-    // RTC synchronization
-    if (rtcAvailable) {
-      rtc.adjust(DateTime(year, month, day, hour, minute, second));
+      if (year >= SETTIME_MIN_YEAR) {  // sanity guard against a bad/partial fix
+        rtc.adjust(DateTime(year, month, day, hour, minute, second));
+      }
+      lastGpsRtcSync = millis();
     }
-  } else {
-    if (gpsAvailable) {
-      gpsAvailable = false;
-    }
+  } else if (gpsAvailable) {
+    gpsAvailable = false;
   }
 
-  // If GPS not available, try NTP (medium priority)
-  if (!gpsAvailable && wifiCredentialsAvailable) {
-    if (!wifiConnected && !wifiConnecting && (millis() - lastNtpAttempt > NTP_RETRY_INTERVAL)) {
-      lastNtpAttempt = millis();
-      wifiConnecting = true;
-      wifiConnectionStart = millis();
+  // RTC is the single source of truth for the displayed time/date
+  if (rtcAvailable && (millis() - lastRtcRead >= RTC_READ_INTERVAL)) {
+    lastRtcRead = millis();
 
-      String ssid, password;
-      wifiManager.getStoredCredentials(ssid, password);
-      WiFi.begin(ssid.c_str(), password.c_str());
-    }
-
-    if (wifiConnecting) {
-      if (WiFi.status() == WL_CONNECTED) {
-        wifiConnected = true;
-        wifiConnecting = false;
-        showStatusMessage("WIFI SET");
-        ntp.begin();
-      } else if (millis() - wifiConnectionStart > WIFI_CONNECTION_TIMEOUT) {
-        wifiConnecting = false;
-        WiFi.disconnect();
-      }
-    }
-
-    if (wifiConnected && ntp.update()) {
-      if (!ntpAvailable) {
-        ntpAvailable = true;
-        showStatusMessage(" NTP OK ");
-      }
-
-      // Set NTP time
-      currentTime.year = ntp.getYear();
-      currentTime.month = ntp.getMonth();
-      currentTime.day = ntp.getDay();
-      currentTime.dayIndex = ntp.getDayIndex();
-      currentTime.hour = ntp.getHour();
-      currentTime.minute = ntp.getMinute();
-      currentTime.second = ntp.getSecond();
-
-      timeUpdated = true;
-
-      // RTC synchronization
-      if (rtcAvailable && !gpsAvailable) {
-        rtc.adjust(DateTime(currentTime.year, currentTime.month, currentTime.day,
-                            currentTime.hour, currentTime.minute, currentTime.second));
-      }
-    } else {
-      if (ntpAvailable) {
-        ntpAvailable = false;
-        showStatusMessage("NTP LOST");
-      }
-    }
-  }
-
-  // If neither GPS nor NTP available, use RTC (lowest priority)
-  if (!gpsAvailable && !ntpAvailable && rtcAvailable) {
-    if (millis() - lastRtcRead > RTC_READ_INTERVAL) {
-      lastRtcRead = millis();
-
-      DateTime now = rtc.now();
-
-      if (now.isValid()) {
-        // Set RTC time
-        currentTime.year = now.year();
-        currentTime.month = now.month();
-        currentTime.day = now.day();
-        currentTime.dayIndex = now.dayOfTheWeek();
-        currentTime.hour = now.hour();
-        currentTime.minute = now.minute();
-        currentTime.second = now.second();
-
-        timeUpdated = true;
-      }
+    DateTime now = rtc.now();
+    if (now.isValid()) {
+      currentTime.year = now.year();
+      currentTime.month = now.month();
+      currentTime.day = now.day();
+      currentTime.dayIndex = now.dayOfTheWeek();
+      currentTime.hour = now.hour();
+      currentTime.minute = now.minute();
+      currentTime.second = now.second();
     }
   }
 }
@@ -739,72 +658,49 @@ void updateTDDisplay() {
   if (showingStatusMessage) {
     if (millis() - statusMessageStart >= STATUS_MSG_DURATION) {
       showingStatusMessage = false;
-      lastDisplayUpdate = millis();  // Reset display timer to update immediately
+      lastDisplayUpdate = millis();
     }
-    return;  // Don't update display while showing status message
+    return;
+  }
+
+  // Timer/Alarm drive their OWN internal timing (note steps, countdown ticks,
+  // setting-title timeouts) via their own constants - they must be ticked every
+  // call, not gated behind displayUpdateInterval, or their state machines stall
+  // (this was the cause of the continuous drone / laggy value display).
+  if (currentMode == 4) {
+    timer.update();
+    return;
+  }
+  if (currentMode == 5) {
+    alarmClock.update();
+    return;
   }
 
   // Regular display updates (only when not showing mode title)
   if (millis() - lastDisplayUpdate >= displayUpdateInterval) {
     lastDisplayUpdate = millis();
 
-    // If in WiFi setup mode and no credentials available, show AP info
-    if (!wifiCredentialsAvailable && showingAPInfo) {
-      // AP info is handled by handleAPInfoDisplay()
-      return;
-    }
-
-    // If no time source is available for time modes, display error
-    if ((currentMode == 0 || currentMode == 1 || currentMode == 2) && !gpsAvailable && !ntpAvailable && !rtcAvailable) {
+    if ((currentMode == 0 || currentMode == 1 || currentMode == 2) && !rtcAvailable) {
       HDSP.displayText(" NO T&D ");
     } else {
       switch (currentMode) {
-        // time (HH:MM:SS)
         case 0:
-          HDSP.displayTime(currentTime.hour, currentTime.minute, currentTime.second);
+          HDSP.displayTime(currentTime.hour, currentTime.minute, currentTime.second, timeDisplayReversed);
           break;
-        // year + month (2025. 06)
         case 1:
-          HDSP.displayYearMonth(currentTime.year, currentTime.month);
+          HDSP.displayYearMonth(currentTime.year, currentTime.month, dateDisplayReversed);
           break;
-        // day + short day name (31 Wed)
         case 2:
-          HDSP.displayDayAndName(currentTime.day, currentTime.dayIndex);
+          HDSP.displayDayAndName(currentTime.day, currentTime.dayIndex, dayDisplayReversed);
           break;
-        // temperature (-24.5 C-)
         case 3:
           if (rtcAvailable) {
-            HDSP.displayTemperature(currentTemperature);
+            HDSP.displayTemperature(currentTemperature, tempFahrenheit);
           } else {
             HDSP.displayText("NO TEMP ");
           }
           break;
-        // timer mode
-        case 4:
-          timer.update();  // This handles all timer logic and display
-          break;
-        // alarm mode
-        case 5:
-          alarmClock.update();  // This handles all alarm logic and display
-          break;
-        // GPS latitude
         case 6:
-          if (gpsAvailable) {
-            HDSP.displayGPSLatitude(gps.getLatitude());
-          } else {
-            HDSP.displayText(" NO GPS ");
-          }
-          break;
-        // GPS longitude
-        case 7:
-          if (gpsAvailable) {
-            HDSP.displayGPSLongitude(gps.getLongitude());
-          } else {
-            HDSP.displayText(" NO GPS ");
-          }
-          break;
-        // GPS speed
-        case 8:
           if (gpsAvailable) {
             HDSP.displayGPSSpeed(gps.getSpeedKmph());
           } else {
@@ -814,32 +710,6 @@ void updateTDDisplay() {
       }
     }
   }
-}
-
-// Function for button debouncing
-void debounceBtn(byte btnPin, byte *btnState, byte *lastBtnState, unsigned long *lastDebounceTime, void (*callback)()) {
-  int reading = digitalRead(btnPin);
-
-  // If the switch changed, due to noise or pressing:
-  if (reading != *lastBtnState) {
-    *lastDebounceTime = millis();
-  }
-
-  // If the reading has been stable for longer than the debounce delay
-  if ((millis() - *lastDebounceTime) > DEBOUNCE_DELAY) {
-    // If the button state has actually changed:
-    if (reading != *btnState) {
-      *btnState = reading;
-
-      // Only call callback on button press (HIGH to LOW transition)
-      if (*btnState == LOW) {
-        callback();
-      }
-    }
-  }
-
-  // Save the reading for next time
-  *lastBtnState = reading;
 }
 
 void runDisplayTypeSetup() {
