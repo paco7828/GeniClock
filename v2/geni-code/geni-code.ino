@@ -654,6 +654,12 @@ void updateTimeSource() {
 }
 
 void updateTDDisplay() {
+  // The alarm's mode-independent tick (top of loop()) already owns the
+  // display while it's ringing - don't let the normal per-mode logic below
+  // race against it and flicker between "WAKE UP" and whatever mode is on
+  // screen.
+  if (alarmClock.isAlarmActive()) return;
+
   // Check if we're showing a status message
   if (showingStatusMessage) {
     if (millis() - statusMessageStart >= STATUS_MSG_DURATION) {
